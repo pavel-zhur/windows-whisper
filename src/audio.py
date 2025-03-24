@@ -32,14 +32,17 @@ class AudioRecorder:
         self.recording_thread = None
         self.max_seconds = 300  # Default max recording time
         self.start_delay = 1.5  # Delay in seconds before recording starts
+        self.level_callback = None  # Callback for audio levels
+        logger.debug(f"AudioRecorder initialized with sample_rate={sample_rate}, channels={channels}, chunk={chunk}")
         
-    def start_recording(self, max_seconds=None, callback_fn=None):
+    def start_recording(self, max_seconds=None, callback_fn=None, level_callback=None):
         """
         Start recording audio
         
         Args:
             max_seconds (int): Maximum recording duration in seconds
             callback_fn (callable): Function to call when recording actually starts
+            level_callback (callable): Function to call with audio levels (0.0-1.0)
             
         Returns:
             bool: True if recording started successfully
@@ -50,7 +53,9 @@ class AudioRecorder:
             
         if max_seconds:
             self.max_seconds = max_seconds
+            logger.debug(f"Setting max recording duration to {max_seconds} seconds")
             
+        self.level_callback = level_callback
         self.frames = []
         self.is_recording = True
         
@@ -64,6 +69,7 @@ class AudioRecorder:
                 input=True,
                 frames_per_buffer=self.chunk
             )
+            logger.debug("Audio stream initialized successfully")
             # Clear any initial buffer
             self.stream.read(self.chunk)
         except Exception as e:
@@ -138,25 +144,55 @@ class AudioRecorder:
             logger.error(f"Error saving audio file: {e}")
             return False
             
+    def _calculate_audio_level(self, data):
+        """Calculate audio level from raw audio data"""
+        try:
+            # Convert bytes to numpy array
+            audio_data = np.frombuffer(data, dtype=np.int16)
+            
+            # Calculate RMS value
+            rms = np.sqrt(np.mean(np.square(audio_data)))
+            
+            # Convert to range 0.0-1.0 (assuming 16-bit audio)
+            level = min(1.0, rms / 32768.0)
+            
+            return level
+        except Exception as e:
+            logger.error(f"Error calculating audio level: {e}")
+            return 0.0
+        
     def _record(self, callback_fn=None):
         """Record audio from the microphone"""
         try:
             # Add initial delay
+            logger.debug(f"Waiting {self.start_delay} seconds before starting recording...")
             time.sleep(self.start_delay)
             
             # Notify that recording is actually starting
             if callback_fn:
                 callback_fn()
+                logger.debug("Recording callback function executed")
             
             start_time = time.time()
+            frame_count = 0
             while self.is_recording:
-                if time.time() - start_time > self.max_seconds:
-                    logger.info("Maximum recording time reached")
+                current_time = time.time() - start_time
+                if current_time > self.max_seconds:
+                    logger.info(f"Maximum recording time reached ({self.max_seconds} seconds)")
                     break
                     
                 try:
                     data = self.stream.read(self.chunk, exception_on_overflow=False)
                     self.frames.append(data)
+                    frame_count += 1
+                    
+                    # Calculate and send audio level
+                    if self.level_callback:
+                        level = self._calculate_audio_level(data)
+                        self.level_callback(level)
+                    
+                    if frame_count % 100 == 0:  # Log every 100 frames
+                        logger.debug(f"Recording in progress: {current_time:.1f} seconds, {frame_count} frames captured")
                 except Exception as e:
                     logger.error(f"Error reading audio data: {e}")
                     break
@@ -164,4 +200,5 @@ class AudioRecorder:
         except Exception as e:
             logger.error(f"Error in recording thread: {e}")
         finally:
-            self.is_recording = False 
+            self.is_recording = False
+            logger.debug(f"Recording stopped. Total frames: {len(self.frames)}, Duration: {time.time() - start_time:.1f} seconds") 

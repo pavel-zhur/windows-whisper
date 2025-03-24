@@ -1,8 +1,98 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 import sys
 import logging
+import numpy as np
+import random  # For initial demo animation
 
 logger = logging.getLogger(__name__)
+
+class WaveformWidget(QtWidgets.QWidget):
+    """Widget that displays an animated audio waveform"""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumHeight(40)
+        self.setMinimumWidth(200)
+        
+        # Initialize waveform data
+        self.waveform_data = [0.0] * 50  # 50 points for the waveform
+        
+        # Animation timer
+        self.animation_timer = QtCore.QTimer(self)
+        self.animation_timer.timeout.connect(self.update_waveform)
+        self.animation_timer.start(50)  # Update every 50ms
+        
+        # Visual settings
+        self.color = QtGui.QColor(76, 175, 80)  # Green color
+        self.recording = False
+        
+    def start_recording(self):
+        """Start the waveform animation"""
+        self.recording = True
+        self.update()
+        
+    def stop_recording(self):
+        """Stop the waveform animation"""
+        self.recording = False
+        self.waveform_data = [0.0] * 50
+        self.update()
+        
+    def update_waveform(self):
+        """Update the waveform data"""
+        if not self.recording:
+            return
+            
+        # Shift existing data left
+        self.waveform_data = self.waveform_data[1:]
+        
+        # Add new random value for demo
+        # In real implementation, this would use actual audio levels
+        new_value = random.uniform(0.1, 1.0) if self.recording else 0.0
+        self.waveform_data.append(new_value)
+        
+        self.update()  # Trigger repaint
+        
+    def paintEvent(self, event):
+        """Draw the waveform"""
+        painter = QtGui.QPainter(self)
+        painter.setRenderHint(QtGui.QPainter.Antialiasing)
+        
+        # Calculate dimensions
+        width = self.width()
+        height = self.height()
+        center_y = height / 2
+        
+        # Draw waveform
+        if self.recording:
+            path = QtGui.QPainterPath()
+            path.moveTo(0, center_y)
+            
+            point_width = width / (len(self.waveform_data) - 1)
+            
+            # Draw top half of waveform
+            for i, value in enumerate(self.waveform_data):
+                x = i * point_width
+                y = center_y - (value * center_y * 0.8)
+                if i == 0:
+                    path.moveTo(x, y)
+                else:
+                    path.lineTo(x, y)
+                    
+            # Draw bottom half (mirror)
+            for i in range(len(self.waveform_data) - 1, -1, -1):
+                x = i * point_width
+                y = center_y + (self.waveform_data[i] * center_y * 0.8)
+                path.lineTo(x, y)
+                
+            path.lineTo(0, center_y)
+            
+            # Fill the waveform
+            painter.setPen(QtCore.Qt.NoPen)
+            gradient = QtGui.QLinearGradient(0, 0, 0, height)
+            gradient.setColorAt(0, self.color.lighter(150))
+            gradient.setColorAt(1, self.color)
+            painter.setBrush(gradient)
+            painter.drawPath(path)
 
 class RecordingOverlay(QtWidgets.QWidget):
     """
@@ -64,6 +154,7 @@ class RecordingOverlay(QtWidgets.QWidget):
         self.timer.start(1000)  # Update every second
         self.status_label.setText("Recording...")
         self.done_btn.setEnabled(True)
+        self.waveform.start_recording()  # Start waveform animation
         self.recording_started.emit()
         
     def update_timer(self):
@@ -129,6 +220,9 @@ class RecordingOverlay(QtWidgets.QWidget):
         close_btn.clicked.connect(self.cancel_recording)
         title_layout.addWidget(close_btn)
         
+        # Add waveform widget
+        self.waveform = WaveformWidget(self)
+        
         # Status layout
         status_layout = QtWidgets.QHBoxLayout()
         self.status_label = QtWidgets.QLabel("Recording...")
@@ -170,6 +264,7 @@ class RecordingOverlay(QtWidgets.QWidget):
         # Add layouts to main layout
         main_layout.addLayout(title_layout)
         main_layout.addSpacing(5)
+        main_layout.addWidget(self.waveform)  # Add waveform widget
         main_layout.addLayout(status_layout)
         main_layout.addSpacing(10)
         main_layout.addLayout(button_layout)
@@ -178,7 +273,7 @@ class RecordingOverlay(QtWidgets.QWidget):
         self.setLayout(main_layout)
         
         # Set size and position
-        self.resize(250, 120)  # Slightly larger
+        self.resize(300, 180)  # Make window slightly larger to accommodate waveform
         self.center_on_screen()
         
         # Setup recording indicator animation
@@ -214,6 +309,7 @@ class RecordingOverlay(QtWidgets.QWidget):
         self.countdown_timer.stop()
         self.timer.stop()
         self.animation_timer.stop()
+        self.waveform.stop_recording()  # Stop waveform animation
         self.status_label.setText("Processing...")
         self.done_btn.setEnabled(False)
         self.done_btn.setText("Please wait...")
@@ -225,6 +321,7 @@ class RecordingOverlay(QtWidgets.QWidget):
         self.countdown_timer.stop()
         self.timer.stop()
         self.animation_timer.stop()
+        self.waveform.stop_recording()  # Stop waveform animation
         logger.info("Recording cancelled by user")
         self.recording_cancelled.emit()
         self.close()

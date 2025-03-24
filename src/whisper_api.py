@@ -22,6 +22,7 @@ class WhisperAPI:
         self.api_key = api_key
         self.api_endpoint = api_endpoint
         self.model = "whisper-1"  # Enforcing whisper-1 as it's the only available API model
+        logger.debug(f"WhisperAPI initialized with endpoint: {api_endpoint}, model: {self.model}")
         
     def transcribe(self, audio_file_path, language=None):
         """
@@ -40,6 +41,10 @@ class WhisperAPI:
             return False, error_msg
             
         try:
+            # Log file details
+            file_size = os.path.getsize(audio_file_path)
+            logger.debug(f"Processing audio file: {audio_file_path} (size: {file_size/1024:.1f} KB)")
+            
             headers = {
                 "Authorization": f"Bearer {self.api_key}"
             }
@@ -56,6 +61,7 @@ class WhisperAPI:
                 
                 if language:
                     data["language"] = language
+                    logger.debug(f"Setting language to: {language}")
                     
                 logger.info(f"Sending request to Whisper API with model: {self.model}")
                 start_time = time.time()
@@ -68,12 +74,13 @@ class WhisperAPI:
                 )
                 
                 elapsed_time = time.time() - start_time
-                logger.info(f"API request completed in {elapsed_time:.2f} seconds")
+                logger.debug(f"API request completed in {elapsed_time:.2f} seconds with status code: {response.status_code}")
                 
                 if response.status_code == 200:
                     result = response.json()
                     transcription = result.get("text", "").strip()
                     logger.info(f"Transcription successful: {len(transcription)} chars")
+                    logger.debug(f"First 100 chars of transcription: {transcription[:100]}...")
                     return True, transcription
                 else:
                     error_msg = f"API Error: {response.status_code} - {response.text}"

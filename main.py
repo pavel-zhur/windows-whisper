@@ -135,9 +135,10 @@ class WhisperApp(QtCore.QObject):
     def _start_actual_recording(self):
         """Start the actual audio recording after countdown"""
         try:
-            # Start audio recording
+            # Start audio recording with level callback
             self.audio_recorder.start_recording(
-                max_seconds=MAX_RECORDING_SECONDS
+                max_seconds=MAX_RECORDING_SECONDS,
+                level_callback=self._update_waveform if self.recording_overlay else None
             )
             logger.info("Audio recording started")
         except Exception as e:
@@ -146,6 +147,14 @@ class WhisperApp(QtCore.QObject):
                 self.recording_overlay.close()
                 self.recording_overlay = None
             show_notification("Error", f"Failed to start recording: {e}", icon_type="error")
+        
+    def _update_waveform(self, level):
+        """Update the waveform visualization with new audio level"""
+        if self.recording_overlay and hasattr(self.recording_overlay.waveform, 'waveform_data'):
+            # Update the waveform data with the actual audio level
+            self.recording_overlay.waveform.waveform_data = self.recording_overlay.waveform.waveform_data[1:]
+            self.recording_overlay.waveform.waveform_data.append(level)
+            # No need to call update() as it's handled by the animation timer
         
     def process_recording(self):
         """Process the recorded audio"""
