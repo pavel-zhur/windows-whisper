@@ -154,7 +154,18 @@ class AudioRecorder:
             rms = np.sqrt(np.mean(np.square(audio_data)))
             
             # Convert to range 0.0-1.0 (assuming 16-bit audio)
-            level = min(1.0, rms / 32768.0)
+            # Apply noise threshold to avoid showing waves during silence
+            # Value 300 is chosen based on common background noise levels
+            # This may need adjustment based on microphone and environment
+            noise_threshold = 300
+            if rms < noise_threshold:
+                return 0.0
+                
+            # Scale the level and apply max limit
+            level = min(1.0, (rms - noise_threshold) / (32768.0 - noise_threshold))
+            
+            # Apply a slight exponential curve to make the visualization more dynamic
+            level = level ** 0.7
             
             return level
         except Exception as e:
@@ -164,15 +175,20 @@ class AudioRecorder:
     def _record(self, callback_fn=None):
         """Record audio from the microphone"""
         try:
+            # Initialize start_time to avoid UnboundLocalError if there's an early exception
+            start_time = time.time()
+            
             # Add initial delay
             logger.debug(f"Waiting {self.start_delay} seconds before starting recording...")
             time.sleep(self.start_delay)
             
-            # Notify that recording is actually starting
+            # Notify that recording is actually starting - simple direct call
             if callback_fn:
+                # Just directly call the callback - the threading complexity will be handled elsewhere
                 callback_fn()
                 logger.debug("Recording callback function executed")
             
+            # Reset start_time after the delay
             start_time = time.time()
             frame_count = 0
             while self.is_recording:

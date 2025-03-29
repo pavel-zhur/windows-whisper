@@ -17,14 +17,18 @@ class WaveformWidget(QtWidgets.QWidget):
         # Initialize waveform data
         self.waveform_data = [0.0] * 50  # 50 points for the waveform
         
-        # Animation timer
+        # Animation timer - update faster for smoother animation
         self.animation_timer = QtCore.QTimer(self)
-        self.animation_timer.timeout.connect(self.update_waveform)
-        self.animation_timer.start(50)  # Update every 50ms
+        self.animation_timer.timeout.connect(self.update_animation)
+        self.animation_timer.start(30)  # Update every 30ms for smoother animation
         
         # Visual settings
         self.color = QtGui.QColor(76, 175, 80)  # Green color
         self.recording = False
+        
+        # For smoother animation, we'll interpolate between values
+        self.target_waveform = [0.0] * 50
+        self.smoothing_factor = 0.3  # How quickly the waveform moves toward target (0-1)
         
     def start_recording(self):
         """Start the waveform animation"""
@@ -35,22 +39,36 @@ class WaveformWidget(QtWidgets.QWidget):
         """Stop the waveform animation"""
         self.recording = False
         self.waveform_data = [0.0] * 50
+        self.target_waveform = [0.0] * 50
         self.update()
-        
-    def update_waveform(self):
-        """Update the waveform data"""
+    
+    def update_animation(self):
+        """Animate the waveform smoothly"""
+        if not self.recording:
+            # Gradually return to zero when not recording
+            if any(abs(x) > 0.01 for x in self.waveform_data):
+                self.waveform_data = [x * 0.8 for x in self.waveform_data]
+                self.update()
+            return
+            
+        # Smooth transition to target values
+        needs_update = False
+        for i in range(len(self.waveform_data)):
+            diff = self.target_waveform[i] - self.waveform_data[i]
+            if abs(diff) > 0.01:  # Only update if there's a noticeable difference
+                self.waveform_data[i] += diff * self.smoothing_factor
+                needs_update = True
+                
+        if needs_update:
+            self.update()
+            
+    def add_level(self, level):
+        """Add a new audio level to the waveform"""
         if not self.recording:
             return
             
-        # Shift existing data left
-        self.waveform_data = self.waveform_data[1:]
-        
-        # Add new random value for demo
-        # In real implementation, this would use actual audio levels
-        new_value = random.uniform(0.1, 1.0) if self.recording else 0.0
-        self.waveform_data.append(new_value)
-        
-        self.update()  # Trigger repaint
+        # Shift existing target data left
+        self.target_waveform = self.target_waveform[1:] + [level]
         
     def paintEvent(self, event):
         """Draw the waveform"""
@@ -63,11 +81,11 @@ class WaveformWidget(QtWidgets.QWidget):
         center_y = height / 2
         
         # Draw waveform
-        if self.recording:
+        if self.recording or any(self.waveform_data):
             path = QtGui.QPainterPath()
             path.moveTo(0, center_y)
             
-            point_width = width / (len(self.waveform_data) - 1)
+            point_width = width / (len(self.waveform_data) - 1) if len(self.waveform_data) > 1 else width
             
             # Draw top half of waveform
             for i, value in enumerate(self.waveform_data):
@@ -146,16 +164,20 @@ class RecordingOverlay(QtWidgets.QWidget):
             self.timer_label.setText(str(self.countdown_value))
         else:
             self.countdown_timer.stop()
-            self.start_recording()
+            # Change status but don't start timer yet
+            self.status_label.setText("Initializing...")
+            self.done_btn.setEnabled(False)
+            # Signal that we're ready to start recording, but don't start the timer yet
+            self.recording_started.emit()
             
     def start_recording(self):
-        """Start the actual recording timer"""
+        """Start the actual recording timer - called when audio recording actually starts"""
+        # Don't start this until the audio recording has actually started (called from WhisperApp)
         self.start_time = QtCore.QTime.currentTime()
         self.timer.start(1000)  # Update every second
         self.status_label.setText("Recording...")
         self.done_btn.setEnabled(True)
         self.waveform.start_recording()  # Start waveform animation
-        self.recording_started.emit()
         
     def update_timer(self):
         """Update the timer display"""
@@ -278,6 +300,11 @@ class RecordingOverlay(QtWidgets.QWidget):
         
         # Setup recording indicator animation
         self.setup_animation()
+        
+        # Initialize UI with waiting state
+        self.status_label.setText("Starting in...")
+        self.timer_label.setText(str(self.countdown_value))
+        self.done_btn.setEnabled(False)
         
         logger.info("Recording overlay UI setup complete")
         

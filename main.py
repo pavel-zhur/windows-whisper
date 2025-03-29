@@ -131,30 +131,39 @@ class WhisperApp(QtCore.QObject):
                 self.recording_overlay.close()
                 self.recording_overlay = None
             show_notification("Error", f"Failed to start recording: {e}", icon_type="error")
-            
+        
     def _start_actual_recording(self):
         """Start the actual audio recording after countdown"""
         try:
             # Start audio recording with level callback
             self.audio_recorder.start_recording(
                 max_seconds=MAX_RECORDING_SECONDS,
-                level_callback=self._update_waveform if self.recording_overlay else None
+                level_callback=self._update_waveform if self.recording_overlay else None,
+                callback_fn=self._recording_started_callback  # Add callback for when recording actually starts
             )
-            logger.info("Audio recording started")
+            # Don't start the UI timer yet - it will be started in the callback
+            # when the audio recording actually begins after initialization
         except Exception as e:
             logger.error(f"Failed to start audio recording: {e}")
             if self.recording_overlay:
                 self.recording_overlay.close()
                 self.recording_overlay = None
             show_notification("Error", f"Failed to start recording: {e}", icon_type="error")
+    
+    def _recording_started_callback(self):
+        """Called when audio recording has actually started (after delay)"""
+        logger.info("Audio recording started")
+        # Now we can start the timer in the UI
+        if self.recording_overlay and self.recording_overlay.isVisible():
+            # We need to use a different approach for cross-thread UI updates
+            # Use a signal-slot connection that's safer for cross-thread operations
+            QtCore.QTimer.singleShot(0, self.recording_overlay.start_recording)
         
     def _update_waveform(self, level):
         """Update the waveform visualization with new audio level"""
-        if self.recording_overlay and hasattr(self.recording_overlay.waveform, 'waveform_data'):
-            # Update the waveform data with the actual audio level
-            self.recording_overlay.waveform.waveform_data = self.recording_overlay.waveform.waveform_data[1:]
-            self.recording_overlay.waveform.waveform_data.append(level)
-            # No need to call update() as it's handled by the animation timer
+        if self.recording_overlay and hasattr(self.recording_overlay.waveform, 'add_level'):
+            # Use the improved add_level method which handles smooth transitions
+            self.recording_overlay.waveform.add_level(level)
         
     def process_recording(self):
         """Process the recorded audio"""
