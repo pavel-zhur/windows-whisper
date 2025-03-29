@@ -114,16 +114,16 @@ class WaveformWidget(QtWidgets.QWidget):
 
 class RecordingOverlay(QtWidgets.QWidget):
     """
-    Floating overlay UI for the recording functionality
+    Floating overlay UI for the recording functionality with instant response
     """
     # Signals
     recording_done = QtCore.pyqtSignal()
     recording_cancelled = QtCore.pyqtSignal()
-    recording_started = QtCore.pyqtSignal()  # New signal for actual recording start
+    recording_started = QtCore.pyqtSignal()  # Signal for actual recording start
     
     def __init__(self, opacity=0.9, parent=None):
         """
-        Initialize the recording overlay
+        Initialize the recording overlay with instant visibility and recording start
         
         Args:
             opacity (float): Window opacity (0.0-1.0)
@@ -132,81 +132,47 @@ class RecordingOverlay(QtWidgets.QWidget):
         super().__init__(parent)
         self.opacity = opacity
         
-        # Initialize countdown
-        self.countdown_timer = QtCore.QTimer(self)
-        self.countdown_timer.timeout.connect(self.update_countdown)
-        self.countdown_value = 2  # Start countdown from 2
-        
-        # Initialize recording timer
-        self.start_time = None
-        self.timer = QtCore.QTimer(self)
-        self.timer.timeout.connect(self.update_timer)
-        
-        self.setup_ui()
-        
-        # Ensure window is properly shown
-        QtCore.QTimer.singleShot(100, self.ensure_visibility)
-        
-        # Start countdown
-        self.start_countdown()
-        
-    def start_countdown(self):
-        """Start the countdown before recording"""
-        self.status_label.setText("Starting in...")
-        self.timer_label.setText(str(self.countdown_value))
-        self.countdown_timer.start(1000)  # Update every second
-        self.done_btn.setEnabled(False)
-        
-    def update_countdown(self):
-        """Update the countdown display"""
-        self.countdown_value -= 1
-        if self.countdown_value >= 0:
-            self.timer_label.setText(str(self.countdown_value))
-        else:
-            self.countdown_timer.stop()
-            # Change status but don't start timer yet
-            self.status_label.setText("Initializing...")
-            self.done_btn.setEnabled(False)
-            # Signal that we're ready to start recording, but don't start the timer yet
-            self.recording_started.emit()
-            
-    def start_recording(self):
-        """Start the actual recording timer - called when audio recording actually starts"""
-        # Don't start this until the audio recording has actually started (called from WhisperApp)
-        self.start_time = QtCore.QTime.currentTime()
-        self.timer.start(1000)  # Update every second
-        self.status_label.setText("Recording...")
-        self.done_btn.setEnabled(True)
-        self.waveform.start_recording()  # Start waveform animation
-        
-    def update_timer(self):
-        """Update the timer display"""
-        if self.start_time:
-            elapsed = self.start_time.secsTo(QtCore.QTime.currentTime())
-            minutes = elapsed // 60
-            seconds = elapsed % 60
-            self.timer_label.setText(f"{minutes:02d}:{seconds:02d}")
-        
-    def ensure_visibility(self):
-        """Ensure the overlay is visible and on top"""
-        if not self.isVisible():
-            self.show()
-        self.raise_()
-        self.activateWindow()
-        
-    def setup_ui(self):
-        """Set up the UI components"""
-        # Window properties
+        # Set window properties first for faster display
         self.setWindowFlags(
             QtCore.Qt.WindowStaysOnTopHint |
             QtCore.Qt.FramelessWindowHint |
-            QtCore.Qt.Tool |
-            QtCore.Qt.X11BypassWindowManagerHint  # Helps with some window managers
+            QtCore.Qt.Tool
         )
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
         self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)
         self.setWindowOpacity(self.opacity)
         
+        # Show window immediately before heavy initialization
+        self.resize(300, 180)
+        self.center_on_screen()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        
+        # Fast initialization of basic UI elements (time-critical ones)
+        self.timer_label = QtWidgets.QLabel("00:00")
+        self.timer_label.setStyleSheet("color: white; font-weight: bold; font-size: 14px;")
+        self.status_label = QtWidgets.QLabel("Recording...")
+        self.status_label.setStyleSheet("color: white; font-size: 12px;")
+        
+        # Process events to ensure UI is displayed
+        logger.debug("Recording overlay shown - setup complete")
+        QtWidgets.QApplication.processEvents()  # Process pending events to ensure UI is displayed
+        
+        # Now initialize recording timer and remaining UI
+        self.start_time = None
+        self.timer = QtCore.QTimer(self)
+        self.timer.timeout.connect(self.update_timer)
+        
+        # Complete UI setup
+        self.setup_ui()
+        
+        # Use a short timer to start recording after UI is fully displayed
+        logger.debug("Setting up timer to emit recording_started signal with slight delay")
+        QtCore.QTimer.singleShot(100, self._emit_recording_started)
+        
+    def setup_ui(self):
+        """Set up the UI components"""
         # Main layout
         main_layout = QtWidgets.QVBoxLayout()
         main_layout.setContentsMargins(10, 10, 10, 10)  # Add some padding
@@ -217,9 +183,7 @@ class RecordingOverlay(QtWidgets.QWidget):
         title_label.setStyleSheet("color: white; font-weight: bold; font-size: 14px;")
         title_layout.addWidget(title_label)
         
-        # Add timer label
-        self.timer_label = QtWidgets.QLabel("00:00")
-        self.timer_label.setStyleSheet("color: white; font-weight: bold; font-size: 14px;")
+        # Add timer label (already created)
         title_layout.addWidget(self.timer_label)
         
         title_layout.addStretch()
@@ -245,10 +209,8 @@ class RecordingOverlay(QtWidgets.QWidget):
         # Add waveform widget
         self.waveform = WaveformWidget(self)
         
-        # Status layout
+        # Status layout 
         status_layout = QtWidgets.QHBoxLayout()
-        self.status_label = QtWidgets.QLabel("Recording...")
-        self.status_label.setStyleSheet("color: white; font-size: 12px;")
         status_layout.addWidget(self.status_label)
         
         # Animation label (for recording indicator)
@@ -256,11 +218,17 @@ class RecordingOverlay(QtWidgets.QWidget):
         self.animation_label.setStyleSheet("color: red; font-size: 16px;")
         status_layout.addWidget(self.animation_label)
         
+        # Setup recording indicator animation early
+        self.animation_timer = QtCore.QTimer(self)
+        self.animation_timer.timeout.connect(self.update_animation)
+        self.animation_timer.start(500)  # Blink every 500ms
+        self.animation_state = True
+        
         # Button layout
         button_layout = QtWidgets.QHBoxLayout()
         button_layout.addStretch()  # Center the button
         
-        # Done button
+        # Done button 
         self.done_btn = QtWidgets.QPushButton("Done")
         self.done_btn.setFixedWidth(100)  # Fixed width for consistency
         self.done_btn.setStyleSheet("""
@@ -294,26 +262,22 @@ class RecordingOverlay(QtWidgets.QWidget):
         # Set layout
         self.setLayout(main_layout)
         
-        # Set size and position
-        self.resize(300, 180)  # Make window slightly larger to accommodate waveform
-        self.center_on_screen()
-        
-        # Setup recording indicator animation
-        self.setup_animation()
-        
-        # Initialize UI with waiting state
-        self.status_label.setText("Starting in...")
-        self.timer_label.setText(str(self.countdown_value))
-        self.done_btn.setEnabled(False)
-        
         logger.info("Recording overlay UI setup complete")
         
-    def setup_animation(self):
-        """Set up the recording indicator animation"""
-        self.animation_timer = QtCore.QTimer(self)
-        self.animation_timer.timeout.connect(self.update_animation)
-        self.animation_timer.start(500)  # Blink every 500ms
-        self.animation_state = True
+    def start_recording(self):
+        """Start the actual recording timer - called when audio recording starts"""
+        self.start_time = QtCore.QTime.currentTime()
+        self.timer.start(1000)  # Update every second
+        self.waveform.start_recording()  # Start waveform animation
+        logger.debug("Recording UI timer and waveform visualization started")
+        
+    def update_timer(self):
+        """Update the timer display"""
+        if self.start_time:
+            elapsed = self.start_time.secsTo(QtCore.QTime.currentTime())
+            minutes = elapsed // 60
+            seconds = elapsed % 60
+            self.timer_label.setText(f"{minutes:02d}:{seconds:02d}")
         
     def update_animation(self):
         """Update the recording indicator animation"""
@@ -333,7 +297,6 @@ class RecordingOverlay(QtWidgets.QWidget):
         
     def finish_recording(self):
         """Signal that recording is done"""
-        self.countdown_timer.stop()
         self.timer.stop()
         self.animation_timer.stop()
         self.waveform.stop_recording()  # Stop waveform animation
@@ -345,7 +308,6 @@ class RecordingOverlay(QtWidgets.QWidget):
         
     def cancel_recording(self):
         """Signal that recording is cancelled"""
-        self.countdown_timer.stop()
         self.timer.stop()
         self.animation_timer.stop()
         self.waveform.stop_recording()  # Stop waveform animation
@@ -406,6 +368,12 @@ class RecordingOverlay(QtWidgets.QWidget):
         if event.buttons() == QtCore.Qt.LeftButton:
             self.move(event.globalPos() - self.drag_position)
             event.accept()
+
+    def _emit_recording_started(self):
+        """Emit the recording_started signal after a slight delay"""
+        logger.debug("Emitting recording_started signal")
+        self.recording_started.emit()
+        logger.debug("Recording started signal emitted")
 
 
 class NotificationOverlay(QtWidgets.QWidget):

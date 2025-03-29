@@ -62,6 +62,10 @@ class WhisperApp(QtCore.QObject):
         atexit.register(self.cleanup)
         signal.signal(signal.SIGINT, self.signal_handler)
         
+        # Pre-initialize audio system to reduce startup delay
+        self.audio_recorder.pre_initialize()
+        logger.debug("Audio system pre-initialized during app startup")
+        
         # Create system tray icon
         self.create_tray_icon()
         
@@ -101,7 +105,7 @@ class WhisperApp(QtCore.QObject):
         )
         
     def start_recording(self):
-        """Start audio recording and show overlay"""
+        """Start audio recording and show overlay with minimal delay"""
         logger.info("Starting recording...")
         
         # If already recording, don't start another session
@@ -111,18 +115,11 @@ class WhisperApp(QtCore.QObject):
             
         # Create and show recording overlay
         try:
+            # Create the overlay - it will show itself immediately and emit recording_started
             self.recording_overlay = RecordingOverlay()
             self.recording_overlay.recording_done.connect(self.process_recording)
             self.recording_overlay.recording_cancelled.connect(self.cancel_recording)
             self.recording_overlay.recording_started.connect(self._start_actual_recording)
-            
-            # Ensure overlay is shown and activated
-            self.recording_overlay.show()
-            self.recording_overlay.raise_()
-            self.recording_overlay.activateWindow()
-            
-            # Force process events to ensure overlay is displayed
-            QtWidgets.QApplication.processEvents()
             
             logger.info("Recording overlay created and shown")
         except Exception as e:
@@ -133,31 +130,29 @@ class WhisperApp(QtCore.QObject):
             show_notification("Error", f"Failed to start recording: {e}", icon_type="error")
         
     def _start_actual_recording(self):
-        """Start the actual audio recording after countdown"""
+        """Start the actual audio recording immediately"""
         try:
-            # Start audio recording with level callback
+            logger.debug("Starting audio recording immediately")
+            # Start audio recording with level callback and recording callback
             self.audio_recorder.start_recording(
                 max_seconds=MAX_RECORDING_SECONDS,
                 level_callback=self._update_waveform if self.recording_overlay else None,
-                callback_fn=self._recording_started_callback  # Add callback for when recording actually starts
+                callback_fn=self._recording_started_callback
             )
-            # Don't start the UI timer yet - it will be started in the callback
-            # when the audio recording actually begins after initialization
+            logger.debug("Audio recording started")
         except Exception as e:
             logger.error(f"Failed to start audio recording: {e}")
             if self.recording_overlay:
                 self.recording_overlay.close()
                 self.recording_overlay = None
             show_notification("Error", f"Failed to start recording: {e}", icon_type="error")
-    
+            
     def _recording_started_callback(self):
-        """Called when audio recording has actually started (after delay)"""
+        """Called when audio recording has actually started"""
         logger.info("Audio recording started")
         # Now we can start the timer in the UI
         if self.recording_overlay and self.recording_overlay.isVisible():
-            # We need to use a different approach for cross-thread UI updates
-            # Use a signal-slot connection that's safer for cross-thread operations
-            QtCore.QTimer.singleShot(0, self.recording_overlay.start_recording)
+            self.recording_overlay.start_recording()
         
     def _update_waveform(self, level):
         """Update the waveform visualization with new audio level"""
@@ -170,13 +165,22 @@ class WhisperApp(QtCore.QObject):
         logger.info("Processing recording...")
         
         # Stop recording
-        self.audio_recorder.stop_recording()
+        if not self.audio_recorder.stop_recording():
+            logger.error("Failed to stop recording - no recording in progress")
+            show_notification("No recording to process", icon_type="error")
+            return
+        
+        # Check if we have any recorded audio frames
+        if not hasattr(self.audio_recorder, 'frames') or not self.audio_recorder.frames:
+            logger.error("No audio data was recorded")
+            show_notification("No audio was recorded", icon_type="error")
+            return
         
         # Save to temp file
         temp_file_path = get_temp_audio_path()
         if not self.audio_recorder.save_wav(temp_file_path):
             logger.error("Failed to save audio file")
-            self.show_error("Failed to save audio file")
+            show_notification("Failed to save audio file", icon_type="error")
             return
             
         # Send to Whisper API

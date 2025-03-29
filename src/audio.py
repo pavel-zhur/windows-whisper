@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class AudioRecorder:
     """
-    Handles audio recording functionality
+    Handles audio recording functionality with minimal delay
     """
     def __init__(self, sample_rate=16000, channels=1, chunk=1024):
         """
@@ -31,13 +31,55 @@ class AudioRecorder:
         self.is_recording = False
         self.recording_thread = None
         self.max_seconds = 300  # Default max recording time
-        self.start_delay = 1.5  # Delay in seconds before recording starts
         self.level_callback = None  # Callback for audio levels
+        
+        # Initialize PyAudio immediately
+        try:
+            self.pyaudio = pyaudio.PyAudio()
+            logger.debug("PyAudio initialized during AudioRecorder creation")
+        except Exception as e:
+            logger.error(f"Failed to initialize PyAudio: {e}")
+            self.pyaudio = None
+            
         logger.debug(f"AudioRecorder initialized with sample_rate={sample_rate}, channels={channels}, chunk={chunk}")
         
+    def pre_initialize(self):
+        """
+        Pre-initialize PyAudio to reduce latency during recording start
+        """
+        # If PyAudio is not yet initialized, initialize it
+        if self.pyaudio is None:
+            try:
+                logger.debug("Pre-initializing PyAudio")
+                self.pyaudio = pyaudio.PyAudio()
+            except Exception as e:
+                logger.error(f"Failed to pre-initialize PyAudio: {e}")
+                return False
+        
+        # Open and close a test stream to "warm up" the audio system
+        try:
+            logger.debug("Opening test audio stream")
+            test_stream = self.pyaudio.open(
+                format=pyaudio.paInt16,
+                channels=self.channels,
+                rate=self.sample_rate,
+                input=True,
+                frames_per_buffer=self.chunk
+            )
+            # Read a single chunk to initialize everything
+            test_stream.read(self.chunk)
+            # Close test stream
+            test_stream.stop_stream()
+            test_stream.close()
+            logger.debug("Test audio stream closed - audio system ready")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to pre-initialize audio stream: {e}")
+            return False
+    
     def start_recording(self, max_seconds=None, callback_fn=None, level_callback=None):
         """
-        Start recording audio
+        Start recording audio immediately with minimal delay
         
         Args:
             max_seconds (int): Maximum recording duration in seconds
@@ -53,15 +95,24 @@ class AudioRecorder:
             
         if max_seconds:
             self.max_seconds = max_seconds
-            logger.debug(f"Setting max recording duration to {max_seconds} seconds")
             
         self.level_callback = level_callback
         self.frames = []
         self.is_recording = True
         
-        # Initialize PyAudio before the delay
+        # Ensure PyAudio is initialized
+        if self.pyaudio is None:
+            try:
+                logger.debug("Initializing PyAudio during recording start")
+                self.pyaudio = pyaudio.PyAudio()
+            except Exception as e:
+                logger.error(f"Failed to initialize audio: {e}")
+                self.is_recording = False
+                return False
+                
+        # Open audio stream with minimal overhead
         try:
-            self.pyaudio = pyaudio.PyAudio()
+            logger.debug("Opening audio stream for immediate recording")
             self.stream = self.pyaudio.open(
                 format=pyaudio.paInt16,
                 channels=self.channels,
@@ -69,25 +120,79 @@ class AudioRecorder:
                 input=True,
                 frames_per_buffer=self.chunk
             )
-            logger.debug("Audio stream initialized successfully")
-            # Clear any initial buffer
-            self.stream.read(self.chunk)
+            
+            # Start callback immediately without any delay
+            if callback_fn:
+                logger.debug("Calling recording callback function immediately")
+                callback_fn()
+            
+            # Start recording thread with no delay
+            logger.debug("Starting recording thread immediately")
+            self.recording_thread = threading.Thread(
+                target=self._record,
+                args=(None,)  # No callback here - already called
+            )
+            self.recording_thread.daemon = True
+            self.recording_thread.start()
+            
+            logger.info("Recording started with minimal delay")
+            return True
         except Exception as e:
-            logger.error(f"Failed to initialize audio: {e}")
+            logger.error(f"Failed to start recording: {e}")
             self.is_recording = False
             return False
             
-        # Start recording in a separate thread
-        self.recording_thread = threading.Thread(
-            target=self._record,
-            args=(callback_fn,)
-        )
-        self.recording_thread.daemon = True
-        self.recording_thread.start()
-        
-        logger.info("Recording started")
-        return True
-        
+    def _record(self, callback_fn=None):
+        """Record audio from the microphone with no initial delay"""
+        try:
+            start_time = time.time()
+            frame_count = 0
+            
+            # Check if the stream is properly initialized
+            if not self.stream:
+                logger.error("Stream is not initialized, cannot record audio")
+                self.is_recording = False
+                return
+                
+            # Read first chunk of data to ensure initialization
+            try:
+                initial_data = self.stream.read(self.chunk, exception_on_overflow=False)
+                self.frames.append(initial_data)
+                logger.debug("Successfully read first audio chunk")
+            except Exception as e:
+                logger.error(f"Failed to read initial audio data: {e}")
+                self.is_recording = False
+                return
+                
+            # Start reading audio immediately
+            while self.is_recording:
+                current_time = time.time() - start_time
+                if current_time > self.max_seconds:
+                    logger.info(f"Maximum recording time reached ({self.max_seconds} seconds)")
+                    break
+                    
+                try:
+                    data = self.stream.read(self.chunk, exception_on_overflow=False)
+                    self.frames.append(data)
+                    frame_count += 1
+                    
+                    # Calculate and send audio level
+                    if self.level_callback and frame_count % 2 == 0:  # Reduced frequency for performance
+                        level = self._calculate_audio_level(data)
+                        self.level_callback(level)
+                    
+                    if frame_count % 100 == 0:  # Log every 100 frames
+                        logger.debug(f"Recording in progress: {current_time:.1f} seconds, {frame_count} frames captured")
+                except Exception as e:
+                    logger.error(f"Error reading audio data: {e}")
+                    break
+                    
+        except Exception as e:
+            logger.error(f"Error in recording thread: {e}")
+        finally:
+            self.is_recording = False
+            logger.debug(f"Recording stopped. Total frames: {len(self.frames)}, Duration: {time.time() - start_time:.1f} seconds")
+            
     def stop_recording(self):
         """
         Stop the current recording
@@ -99,21 +204,32 @@ class AudioRecorder:
             logger.warning("No recording in progress")
             return False
             
+        # Check if we have any frames before stopping
+        if not self.frames:
+            logger.warning("Recording is active but no frames were captured - attempting to read more data")
+            try:
+                # Try to read one more chunk of data before giving up
+                if self.stream and self.is_recording:
+                    data = self.stream.read(self.chunk, exception_on_overflow=False)
+                    self.frames.append(data)
+                    logger.debug("Successfully captured one frame of audio data")
+            except Exception as e:
+                logger.error(f"Failed to read additional audio data: {e}")
+            
         self.is_recording = False
         if self.recording_thread:
-            self.recording_thread.join(timeout=2.0)
+            self.recording_thread.join(timeout=1.0)  # Reduced timeout
             
         if self.stream:
             try:
                 self.stream.stop_stream()
                 self.stream.close()
+                self.stream = None
             except Exception as e:
                 logger.error(f"Error closing audio stream: {e}")
                 
-        if self.pyaudio:
-            self.pyaudio.terminate()
-            self.pyaudio = None
-            
+        # Log the number of frames collected
+        logger.debug(f"Recording stopped with {len(self.frames)} frames collected")
         logger.info("Recording stopped")
         return True
         
@@ -170,51 +286,4 @@ class AudioRecorder:
             return level
         except Exception as e:
             logger.error(f"Error calculating audio level: {e}")
-            return 0.0
-        
-    def _record(self, callback_fn=None):
-        """Record audio from the microphone"""
-        try:
-            # Initialize start_time to avoid UnboundLocalError if there's an early exception
-            start_time = time.time()
-            
-            # Add initial delay
-            logger.debug(f"Waiting {self.start_delay} seconds before starting recording...")
-            time.sleep(self.start_delay)
-            
-            # Notify that recording is actually starting - simple direct call
-            if callback_fn:
-                # Just directly call the callback - the threading complexity will be handled elsewhere
-                callback_fn()
-                logger.debug("Recording callback function executed")
-            
-            # Reset start_time after the delay
-            start_time = time.time()
-            frame_count = 0
-            while self.is_recording:
-                current_time = time.time() - start_time
-                if current_time > self.max_seconds:
-                    logger.info(f"Maximum recording time reached ({self.max_seconds} seconds)")
-                    break
-                    
-                try:
-                    data = self.stream.read(self.chunk, exception_on_overflow=False)
-                    self.frames.append(data)
-                    frame_count += 1
-                    
-                    # Calculate and send audio level
-                    if self.level_callback:
-                        level = self._calculate_audio_level(data)
-                        self.level_callback(level)
-                    
-                    if frame_count % 100 == 0:  # Log every 100 frames
-                        logger.debug(f"Recording in progress: {current_time:.1f} seconds, {frame_count} frames captured")
-                except Exception as e:
-                    logger.error(f"Error reading audio data: {e}")
-                    break
-                    
-        except Exception as e:
-            logger.error(f"Error in recording thread: {e}")
-        finally:
-            self.is_recording = False
-            logger.debug(f"Recording stopped. Total frames: {len(self.frames)}, Duration: {time.time() - start_time:.1f} seconds") 
+            return 0.0 
