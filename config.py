@@ -17,7 +17,6 @@ TEMP_DIR = tempfile.gettempdir()
 
 # Whisper API settings
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "whisper-1") 
-WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", "en")
 API_ENDPOINT = "https://api.openai.com/v1/audio/transcriptions"
 
 # UI settings

@@ -132,6 +132,9 @@ class RecordingOverlay(QtWidgets.QWidget):
         super().__init__(parent)
         self.opacity = opacity
         
+        # Set focus policy to strongly want focus
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
+        
         # Set window properties first for faster display
         self.setWindowFlags(
             QtCore.Qt.WindowStaysOnTopHint |
@@ -139,7 +142,8 @@ class RecordingOverlay(QtWidgets.QWidget):
             QtCore.Qt.Tool
         )
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)
+        # Remove WA_ShowWithoutActivating to allow window to gain focus automatically
+        # self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)
         self.setWindowOpacity(self.opacity)
         
         # Show window immediately before heavy initialization
@@ -148,6 +152,7 @@ class RecordingOverlay(QtWidgets.QWidget):
         self.show()
         self.raise_()
         self.activateWindow()
+        self.setFocus()  # Explicitly request keyboard focus
         
         # Fast initialization of basic UI elements (time-critical ones)
         self.timer_label = QtWidgets.QLabel("00:00")
@@ -170,6 +175,9 @@ class RecordingOverlay(QtWidgets.QWidget):
         # Use a short timer to start recording after UI is fully displayed
         logger.debug("Setting up timer to emit recording_started signal with slight delay")
         QtCore.QTimer.singleShot(100, self._emit_recording_started)
+        
+        # Use a timer to ensure focus is set after window is fully created
+        QtCore.QTimer.singleShot(200, self._ensure_focus)
         
     def setup_ui(self):
         """Set up the UI components"""
@@ -203,7 +211,12 @@ class RecordingOverlay(QtWidgets.QWidget):
                 border-radius: 12px;
             }
         """)
-        close_btn.clicked.connect(self.cancel_recording)
+        close_btn.setToolTip("Cancel recording")
+        # Wrap the cancel_recording method for debugging
+        def on_close_btn_clicked():
+            logger.debug("Close button clicked by user")
+            self.cancel_recording()
+        close_btn.clicked.connect(on_close_btn_clicked)
         title_layout.addWidget(close_btn)
         
         # Add waveform widget
@@ -226,7 +239,11 @@ class RecordingOverlay(QtWidgets.QWidget):
         
         # Button layout
         button_layout = QtWidgets.QHBoxLayout()
-        button_layout.addStretch()  # Center the button
+        button_layout.addStretch()  # Space on the left
+        
+        # Create a vertical layout for the Done button and its shortcut hint
+        done_btn_layout = QtWidgets.QVBoxLayout()
+        done_btn_layout.setSpacing(2)  # Reduce spacing between button and hint
         
         # Done button 
         self.done_btn = QtWidgets.QPushButton("Done")
@@ -248,8 +265,40 @@ class RecordingOverlay(QtWidgets.QWidget):
             }
         """)
         self.done_btn.clicked.connect(self.finish_recording)
-        button_layout.addWidget(self.done_btn)
-        button_layout.addStretch()  # Center the button
+        done_btn_layout.addWidget(self.done_btn)
+        
+        # Add space key hint
+        self.space_hint = QtWidgets.QLabel("or press Space")
+        self.space_hint.setStyleSheet("color: #aaaaaa; font-size: 9px; padding: 0;")
+        self.space_hint.setAlignment(QtCore.Qt.AlignCenter)
+        done_btn_layout.addWidget(self.space_hint)
+        
+        button_layout.addLayout(done_btn_layout)
+        
+        # Record Again button (initially hidden)
+        self.record_again_btn = QtWidgets.QPushButton("Record Again")
+        self.record_again_btn.setFixedWidth(120)  # Fixed width for consistency
+        self.record_again_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                border: none;
+                padding: 8px 15px;
+                border-radius: 4px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #0b7dda;
+            }
+            QPushButton:disabled {
+                background-color: #cccccc;
+            }
+        """)
+        self.record_again_btn.clicked.connect(self.start_new_recording)
+        self.record_again_btn.hide()  # Initially hidden
+        button_layout.addWidget(self.record_again_btn)
+        
+        button_layout.addStretch()  # Space on the right
         
         # Add layouts to main layout
         main_layout.addLayout(title_layout)
@@ -308,10 +357,14 @@ class RecordingOverlay(QtWidgets.QWidget):
         
     def cancel_recording(self):
         """Signal that recording is cancelled"""
+        logger.info("Recording cancelled by user - calling stack trace for debugging")
+        import traceback
+        stack_trace = ''.join(traceback.format_stack())
+        logger.debug(f"Cancel recording stack trace:\n{stack_trace}")
+        
         self.timer.stop()
         self.animation_timer.stop()
         self.waveform.stop_recording()  # Stop waveform animation
-        logger.info("Recording cancelled by user")
         self.recording_cancelled.emit()
         self.close()
         
@@ -323,12 +376,18 @@ class RecordingOverlay(QtWidgets.QWidget):
             success (bool): Whether transcription was successful
             text_or_error (str): Transcription text or error message
         """
+        # Hide the space hint when showing results
+        self.space_hint.hide()
+        
         if success:
             self.status_label.setText("Copied to clipboard!")
             self.done_btn.setText("Close")
             self.done_btn.setEnabled(True)
             self.done_btn.clicked.disconnect()
             self.done_btn.clicked.connect(self.close)
+            
+            # Show Record Again button
+            self.record_again_btn.show()
         else:
             self.status_label.setText("Transcription failed")
             error_dialog = QtWidgets.QMessageBox()
@@ -345,6 +404,12 @@ class RecordingOverlay(QtWidgets.QWidget):
                 self.recording_done.emit()  # Try again
             else:
                 self.close()
+        
+    def showEvent(self, event):
+        """Handle show event to ensure focus is set"""
+        super().showEvent(event)
+        self.activateWindow()
+        self.setFocus()
         
     def paintEvent(self, event):
         """Custom paint event for rounded rectangle background"""
@@ -368,12 +433,79 @@ class RecordingOverlay(QtWidgets.QWidget):
         if event.buttons() == QtCore.Qt.LeftButton:
             self.move(event.globalPos() - self.drag_position)
             event.accept()
+            
+    def keyPressEvent(self, event):
+        """Handle key press events"""
+        # If Space key is pressed
+        if event.key() == QtCore.Qt.Key_Space:
+            logger.debug(f"Space key pressed - timer active: {self.timer.isActive()}, button text: '{self.done_btn.text()}', enabled: {self.done_btn.isEnabled()}")
+            
+            # ONLY handle Space if we're in active recording mode
+            if self.timer.isActive() and self.done_btn.isEnabled() and self.done_btn.text() == "Done":
+                logger.debug("Space key - triggering finish_recording()")
+                self.finish_recording()
+            else:
+                logger.debug("Space key - ignoring in current state")
+            
+            # Always consume the event to prevent it from being processed elsewhere
+            event.accept()
+            return
+        
+        # Handle Escape key - log it and don't let it auto-close the window
+        if event.key() == QtCore.Qt.Key_Escape:
+            logger.debug("Escape key pressed - ignoring to prevent accidental cancellation")
+            event.accept()
+            return
+            
+        # For all other keys, pass to parent
+        super().keyPressEvent(event)
 
     def _emit_recording_started(self):
         """Emit the recording_started signal after a slight delay"""
         logger.debug("Emitting recording_started signal")
         self.recording_started.emit()
         logger.debug("Recording started signal emitted")
+
+    def _ensure_focus(self):
+        """Ensure focus is set after window is fully created"""
+        self.setFocus()
+
+    def start_new_recording(self):
+        """Start a new recording"""
+        # Reset UI state
+        self.status_label.setText("Recording...")
+        self.timer_label.setText("00:00")
+        self.animation_timer.start(500)
+        self.animation_state = True
+        
+        # Reset buttons
+        self.done_btn.setText("Done")
+        self.done_btn.setEnabled(True)
+        if self.done_btn.receivers(self.done_btn.clicked) > 0:
+            self.done_btn.clicked.disconnect()
+        self.done_btn.clicked.connect(self.finish_recording)
+        
+        # Show space hint again
+        self.space_hint.show()
+        
+        # Hide Record Again button
+        self.record_again_btn.hide()
+        
+        # Reset recording timers
+        self.start_time = QtCore.QTime.currentTime()
+        self.timer.start(1000)
+        
+        # Start waveform animation
+        self.waveform.start_recording()
+        
+        # Make sure we have focus to capture key events
+        self.raise_()
+        self.activateWindow()
+        self.setFocus()
+        
+        # Emit signal to start actual recording
+        logger.info("Starting new recording")
+        self.recording_started.emit()
 
 
 class NotificationOverlay(QtWidgets.QWidget):

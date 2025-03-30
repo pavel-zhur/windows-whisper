@@ -10,7 +10,7 @@ from PyQt5 import QtWidgets, QtCore
 # Local imports
 from config import (
     SHORTCUT_KEY, OPENAI_API_KEY, API_ENDPOINT, 
-    WHISPER_MODEL, WHISPER_LANGUAGE, SAMPLE_RATE,
+    WHISPER_MODEL, SAMPLE_RATE,
     MAX_RECORDING_SECONDS, get_temp_audio_path,
     validate_config
 )
@@ -186,8 +186,7 @@ class WhisperApp(QtCore.QObject):
         # Send to Whisper API
         logger.info(f"Sending to Whisper API: {temp_file_path}")
         success, text_or_error = self.whisper_api.transcribe(
-            temp_file_path, 
-            language=WHISPER_LANGUAGE
+            temp_file_path
         )
         
         if success:

@@ -24,13 +24,12 @@ class WhisperAPI:
         self.model = "whisper-1"  # Enforcing whisper-1 as it's the only available API model
         logger.debug(f"WhisperAPI initialized with endpoint: {api_endpoint}, model: {self.model}")
         
-    def transcribe(self, audio_file_path, language=None):
+    def transcribe(self, audio_file_path):
         """
         Transcribe audio using Whisper API
         
         Args:
             audio_file_path (str): Path to the audio file to transcribe
-            language (str, optional): Language code (e.g., 'en')
             
         Returns:
             tuple: (success, text or error message)
@@ -56,13 +55,10 @@ class WhisperAPI:
                 
                 data = {
                     "model": self.model,
-                    "response_format": "json"
+                    "response_format": "json",
+                    "prompt": "Hello, Whisper API! Please transcribe my audio file into text. Additionally, I need you to add punctuation to the text. I am a multilingual speaker, so please do not translate the content. Thank you very much!"
                 }
                 
-                if language:
-                    data["language"] = language
-                    logger.debug(f"Setting language to: {language}")
-                    
                 logger.info(f"Sending request to Whisper API with model: {self.model}")
                 start_time = time.time()
                 
