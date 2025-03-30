@@ -7,10 +7,10 @@ import atexit
 import signal
 from PyQt5 import QtWidgets, QtCore
 
-# Local imports
+# Local  imports
 from config import (
     SHORTCUT_KEY, OPENAI_API_KEY, API_ENDPOINT, 
-    WHISPER_MODEL, SAMPLE_RATE,
+    WHISPER_MODEL, WHISPER_LANGUAGE, SAMPLE_RATE,
     MAX_RECORDING_SECONDS, get_temp_audio_path,
     validate_config
 )
@@ -46,6 +46,9 @@ class WhisperApp(QtCore.QObject):
             api_endpoint=API_ENDPOINT,
             model=WHISPER_MODEL
         )
+        
+        # Log language setting
+        logger.info(f"Using language setting: {WHISPER_LANGUAGE}")
         
         # UI components
         self.recording_overlay = None

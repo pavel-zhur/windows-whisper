@@ -3,6 +3,7 @@ import json
 import os
 import logging
 import time
+from config import WHISPER_LANGUAGE, WHISPER_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +57,11 @@ class WhisperAPI:
                 data = {
                     "model": self.model,
                     "response_format": "json",
-                    "prompt": "Hello, Whisper API! Please transcribe my audio file into text. Additionally, I need you to add punctuation to the text. I am a multilingual speaker, so please do not translate the content. Thank you very much!"
+                    "language": WHISPER_LANGUAGE,
+                    "prompt": WHISPER_PROMPT
                 }
                 
-                logger.info(f"Sending request to Whisper API with model: {self.model}")
+                logger.info(f"Sending request to Whisper API with model: {self.model}, language: {WHISPER_LANGUAGE}")
                 start_time = time.time()
                 
                 response = requests.post(

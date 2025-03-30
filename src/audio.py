@@ -261,29 +261,39 @@ class AudioRecorder:
             return False
             
     def _calculate_audio_level(self, data):
-        """Calculate audio level from raw audio data"""
+        """
+        Calculate audio level from raw audio data
+        
+        Args:
+            data (bytes): Raw audio data
+            
+        Returns:
+            float: Audio level between 0.0 and 1.0
+        """
         try:
             # Convert bytes to numpy array
             audio_data = np.frombuffer(data, dtype=np.int16)
             
             # Calculate RMS value
-            rms = np.sqrt(np.mean(np.square(audio_data)))
+            rms = np.sqrt(np.mean(np.square(audio_data.astype(np.float32))))
             
-            # Convert to range 0.0-1.0 (assuming 16-bit audio)
-            # Apply noise threshold to avoid showing waves during silence
-            # Value 300 is chosen based on common background noise levels
-            # This may need adjustment based on microphone and environment
-            noise_threshold = 300
-            if rms < noise_threshold:
+            # Set noise floor and normalization values
+            noise_floor = 500  # Adjust for typical indoor ambient noise
+            max_level = 15000  # Typical maximum for normal speech
+            
+            # Apply noise gate
+            if rms < noise_floor:
                 return 0.0
                 
-            # Scale the level and apply max limit
-            level = min(1.0, (rms - noise_threshold) / (32768.0 - noise_threshold))
+            # Normalize with adjusted range and log scaling
+            normalized = (rms - noise_floor) / (max_level - noise_floor)
+            normalized = max(0.0, min(normalized, 1.0))
             
-            # Apply a slight exponential curve to make the visualization more dynamic
-            level = level ** 0.7
+            # Apply log scaling for better dynamics
+            level = np.log10(normalized * 9 + 1) / np.log10(10)
             
             return level
+            
         except Exception as e:
             logger.error(f"Error calculating audio level: {e}")
             return 0.0 

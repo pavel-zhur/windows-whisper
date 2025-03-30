@@ -1,8 +1,6 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
-import sys
 import logging
-import numpy as np
-import random  # For initial demo animation
+import numpy as np  # Used for waveform calculations
 
 logger = logging.getLogger(__name__)
 
@@ -11,24 +9,28 @@ class WaveformWidget(QtWidgets.QWidget):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setMinimumHeight(40)
+        self.setMinimumHeight(68)  # Increased by ~35% from 50
         self.setMinimumWidth(200)
         
-        # Initialize waveform data
-        self.waveform_data = [0.0] * 50  # 50 points for the waveform
+        # Initialize waveform data with more points for smoother visualization
+        self.waveform_data = [0.0] * 75
         
         # Animation timer - update faster for smoother animation
         self.animation_timer = QtCore.QTimer(self)
         self.animation_timer.timeout.connect(self.update_animation)
-        self.animation_timer.start(30)  # Update every 30ms for smoother animation
+        self.animation_timer.start(16)  # ~60 FPS for smoother animation
         
-        # Visual settings
-        self.color = QtGui.QColor(76, 175, 80)  # Green color
+        # Visual settings with more vibrant color
+        self.color = QtGui.QColor(30, 220, 30)  # Even brighter and more saturated green
         self.recording = False
         
         # For smoother animation, we'll interpolate between values
-        self.target_waveform = [0.0] * 50
-        self.smoothing_factor = 0.3  # How quickly the waveform moves toward target (0-1)
+        self.target_waveform = [0.0] * 75
+        self.smoothing_factor = 0.25  # Adjusted for better responsiveness
+        
+        # Add averaging for smoother transitions
+        self.last_levels = []
+        self.max_levels = 3  # Reduced for more responsive visualization
         
     def start_recording(self):
         """Start the waveform animation"""
@@ -38,8 +40,8 @@ class WaveformWidget(QtWidgets.QWidget):
     def stop_recording(self):
         """Stop the waveform animation"""
         self.recording = False
-        self.waveform_data = [0.0] * 50
-        self.target_waveform = [0.0] * 50
+        self.waveform_data = [0.0] * 75
+        self.target_waveform = [0.0] * 75
         self.update()
     
     def update_animation(self):
@@ -47,7 +49,7 @@ class WaveformWidget(QtWidgets.QWidget):
         if not self.recording:
             # Gradually return to zero when not recording
             if any(abs(x) > 0.01 for x in self.waveform_data):
-                self.waveform_data = [x * 0.8 for x in self.waveform_data]
+                self.waveform_data = [x * 0.9 for x in self.waveform_data]  # Slower fade out (was 0.8)
                 self.update()
             return
             
@@ -55,7 +57,7 @@ class WaveformWidget(QtWidgets.QWidget):
         needs_update = False
         for i in range(len(self.waveform_data)):
             diff = self.target_waveform[i] - self.waveform_data[i]
-            if abs(diff) > 0.01:  # Only update if there's a noticeable difference
+            if abs(diff) > 0.001:  # More sensitive updates (was 0.01)
                 self.waveform_data[i] += diff * self.smoothing_factor
                 needs_update = True
                 
@@ -67,8 +69,18 @@ class WaveformWidget(QtWidgets.QWidget):
         if not self.recording:
             return
             
-        # Shift existing target data left
-        self.target_waveform = self.target_waveform[1:] + [level]
+        # Add to averaging buffer
+        self.last_levels.append(level)
+        if len(self.last_levels) > self.max_levels:
+            self.last_levels.pop(0)
+            
+        # Calculate smoothed level with weighted average
+        # Give more weight to recent levels
+        weights = [0.5, 0.3, 0.2][:len(self.last_levels)]
+        smoothed_level = sum(l * w for l, w in zip(reversed(self.last_levels), weights)) / sum(weights)
+        
+        # Shift existing target data left and add new smoothed level
+        self.target_waveform = self.target_waveform[1:] + [smoothed_level]
         
     def paintEvent(self, event):
         """Draw the waveform"""
@@ -87,28 +99,53 @@ class WaveformWidget(QtWidgets.QWidget):
             
             point_width = width / (len(self.waveform_data) - 1) if len(self.waveform_data) > 1 else width
             
-            # Draw top half of waveform
+            # Draw top half of waveform with smoother curve and increased amplitude
+            points = []
             for i, value in enumerate(self.waveform_data):
                 x = i * point_width
-                y = center_y - (value * center_y * 0.8)
-                if i == 0:
-                    path.moveTo(x, y)
-                else:
-                    path.lineTo(x, y)
-                    
-            # Draw bottom half (mirror)
+                y = center_y - (value * center_y * 0.98)  # Increased amplitude to 98%
+                points.append((x, y))
+                
+            # Create smooth curve through points
+            if len(points) > 1:
+                path.moveTo(points[0][0], points[0][1])
+                for i in range(1, len(points) - 2):
+                    x1 = (points[i][0] + points[i+1][0]) / 2
+                    y1 = (points[i][1] + points[i+1][1]) / 2
+                    path.quadTo(points[i][0], points[i][1], x1, y1)
+                path.quadTo(points[-2][0], points[-2][1], points[-1][0], points[-1][1])
+                
+            # Draw bottom half (mirror) with smooth curve
+            points = []
             for i in range(len(self.waveform_data) - 1, -1, -1):
                 x = i * point_width
-                y = center_y + (self.waveform_data[i] * center_y * 0.8)
-                path.lineTo(x, y)
+                y = center_y + (self.waveform_data[i] * center_y * 0.98)  # Increased amplitude to 98%
+                points.append((x, y))
                 
+            if len(points) > 1:
+                for i in range(1, len(points) - 2):
+                    x1 = (points[i][0] + points[i+1][0]) / 2
+                    y1 = (points[i][1] + points[i+1][1]) / 2
+                    path.quadTo(points[i][0], points[i][1], x1, y1)
+                path.quadTo(points[-2][0], points[-2][1], points[-1][0], points[-1][1])
+            
             path.lineTo(0, center_y)
             
-            # Fill the waveform
+            # Fill the waveform with more vibrant gradient
             painter.setPen(QtCore.Qt.NoPen)
             gradient = QtGui.QLinearGradient(0, 0, 0, height)
-            gradient.setColorAt(0, self.color.lighter(150))
-            gradient.setColorAt(1, self.color)
+            gradient.setColorAt(0, self.color.lighter(180))  # Even brighter top (was 160)
+            gradient.setColorAt(0.5, self.color.lighter(130))  # Brighter middle
+            gradient.setColorAt(1, self.color)  # Keep base color at bottom for contrast
+            painter.setBrush(gradient)
+            
+            # Add glow effect
+            glow = QtGui.QPainterPath(path)
+            glow_brush = QtGui.QColor(30, 220, 30, 40)  # Semi-transparent glow
+            painter.setBrush(glow_brush)
+            painter.drawPath(glow)
+            
+            # Draw main waveform
             painter.setBrush(gradient)
             painter.drawPath(path)
 
@@ -408,8 +445,7 @@ class RecordingOverlay(QtWidgets.QWidget):
     def showEvent(self, event):
         """Handle show event to ensure focus is set"""
         super().showEvent(event)
-        self.activateWindow()
-        self.setFocus()
+        self._ensure_focus()
         
     def paintEvent(self, event):
         """Custom paint event for rounded rectangle background"""
@@ -464,10 +500,10 @@ class RecordingOverlay(QtWidgets.QWidget):
         """Emit the recording_started signal after a slight delay"""
         logger.debug("Emitting recording_started signal")
         self.recording_started.emit()
-        logger.debug("Recording started signal emitted")
 
     def _ensure_focus(self):
         """Ensure focus is set after window is fully created"""
+        self.activateWindow()
         self.setFocus()
 
     def start_new_recording(self):

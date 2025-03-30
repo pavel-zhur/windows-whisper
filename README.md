@@ -1,121 +1,192 @@
-# 🗣️ Whisper Transcript Shortcut
+# Windows Whisper
 
-A lightweight voice-to-text tool for Windows that lets you instantly transcribe speech using OpenAI's Whisper API, triggered by `Ctrl + Space`.
+A Windows desktop application that provides instant voice-to-text transcription using OpenAI's Whisper API.
 
-## ✨ Features
+## Features
+- 🎤 One-click voice recording with `Ctrl + Space` hotkey
+- 📝 Real-time waveform visualization
+- ⚡ Instant transcription
+- 📋 Automatic clipboard copy
+- 🔑 Global hotkey support
+- 🎨 Modern, minimalist UI
 
-- **Global Hotkey**: Trigger recording from anywhere with `Ctrl + Space`
-- **Modern UI**: Sleek, floating overlay with recording indicator
-- **Fast Transcription**: Powered by OpenAI's Whisper API
-- **Auto Clipboard**: Transcriptions automatically copied for immediate use
-- **Language Support**: Multiple language transcription support
-- **Configurable**: Easy configuration via environment variables
-- **Distraction-Free**: Minimal interface that stays out of your way
+## Quick Start Guide
 
-## 🚀 Quick Start
+### 1. Get OpenAI API Key
+1. Visit [OpenAI's website](https://platform.openai.com/signup)
+2. Create an account or sign in
+3. Go to [API Keys section](https://platform.openai.com/api-keys)
+4. Click "Create new secret key"
+5. Copy your API key (keep it secure!)
+6. Create a file named `.env` in the application directory and add:
+   ```
+   OPENAI_API_KEY=your_api_key_here
+   ```
 
-1. Clone this repository:
+### 2. Installation
+
+#### Prerequisites
+- Python 3.8 or higher ([Download Python](https://www.python.org/downloads/))
+- Windows 10 or higher
+
+#### Option 1: Simple Installation (Recommended for most users)
+1. Download the latest release from the [Releases page](https://github.com/yourusername/windows-whisper/releases)
+2. Extract the ZIP file to your desired location
+3. Create the `.env` file with your OpenAI API key (as shown above)
+4. Double-click `Windows Whisper.exe` to start
+
+#### Option 2: From Source (For developers)
+1. Clone the repository:
    ```bash
    git clone https://github.com/yourusername/windows-whisper.git
    cd windows-whisper
    ```
 
-2. Create and activate a virtual environment:
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\activate
-   ```
-
-3. Install dependencies:
+2. Install dependencies:
    ```bash
    pip install -r requirements.txt
    ```
 
-4. Set up your environment:
-   ```bash
-   cp .env.example .env
-   ```
-   Edit `.env` and add your OpenAI API key:
-   ```
-   OPENAI_API_KEY=your_api_key_here
-   ```
-
-5. Run the application:
+3. Run the application:
    ```bash
    python main.py
    ```
 
-## 💡 Usage
+### 3. Using the Application
 
-1. Press `Ctrl + Space` from any application
-2. Speak clearly into your microphone
-3. Click "Done" when finished speaking
-4. Wait for the transcription (usually takes 2-3 seconds)
-5. The text is automatically copied to your clipboard
-6. Paste anywhere with `Ctrl + V`
+1. **Start Recording**
+   - Press `Ctrl + Space` from anywhere
+   - Or click the system tray icon and select "Start Recording"
 
-## ⚙️ Configuration
+2. **During Recording**
+   - Speak clearly into your microphone
+   - Watch the real-time waveform visualization
+   - Press Space or click "Done" when finished
+   - Click "×" or press Escape to cancel
 
-The following environment variables can be configured in `.env`:
+3. **After Recording**
+   - The text will be automatically transcribed
+   - Transcribed text is copied to your clipboard
+   - Click "Record Again" for another recording
+   - Or close the window to finish
 
-- `OPENAI_API_KEY`: Your OpenAI API key
-- `WHISPER_MODEL`: Model to use (default: "whisper-1")
-- `WHISPER_LANGUAGE`: Preferred language (default: "en")
-- `SHORTCUT_KEY`: Global hotkey (default: "ctrl+space")
-- `MAX_RECORDING_SECONDS`: Maximum recording duration (default: 30)
+## Troubleshooting
 
-## 🧪 Testing
+### Common Issues
 
-Run the integration test to verify everything works:
-```bash
-python test_integration.py
-```
+1. **API Key Issues**
+   - Ensure your `.env` file is in the correct location
+   - Check if the API key is valid
+   - Verify you have sufficient OpenAI credits
 
-The test will:
-1. Start the application
-2. Simulate recording trigger
-3. Test the overlay UI
-4. Verify transcription workflow
+2. **Audio Recording Issues**
+   - Check if your microphone is set as the default recording device
+   - Ensure no other application is using the microphone
+   - Try restarting the application
 
-## 📋 Requirements
+3. **Transcription Language Issues**
+   - By default, the app uses English ("en") for transcription
+   - If you're getting transcriptions in the wrong language, add `WHISPER_LANGUAGE=en` to your `.env` file
+   - For other languages, use the appropriate language code (e.g., "fr" for French, "de" for German)
+   - If translations occur regardless of setting, try adding a more specific prompt in your `.env` file: `WHISPER_PROMPT="Transcribe exactly as spoken. Do not translate."`
 
-- Windows 10/11
+4. **Application Won't Start**
+   - Verify all dependencies are installed
+   - Check if Python is in your system PATH
+   - Run from command line to see error messages
+
+### Error Messages
+
+- `No module named 'xyz'`: Run `pip install -r requirements.txt` again
+- `API key not found`: Check your `.env` file setup
+- `PortAudio error`: Restart your computer or check audio devices
+
+## Advanced Configuration
+
+### Customizing Settings
+
+Edit `config.py` or add to your `.env` file to modify:
+- Default hotkey combination (`SHORTCUT_KEY`)
+- Audio recording parameters (`SAMPLE_RATE`, `MAX_RECORDING_SECONDS`)
+- Language settings (`WHISPER_LANGUAGE`)
+- UI appearance settings (`UI_THEME`, `UI_OPACITY`)
+- Temporary file locations
+
+### System Requirements
+
+Minimum:
+- Windows 10 (64-bit)
+- 4GB RAM
 - Python 3.8+
-- OpenAI API key
-- Microphone access
+- Microphone
+- Internet connection
 
-## 🔧 Troubleshooting
+Recommended:
+- Windows 10/11 (64-bit)
+- 8GB RAM
+- Python 3.10+
+- High-quality microphone
+- Stable internet connection
 
-Common issues:
+## Security Notes
 
-1. **Hotkey not working**: 
-   - Ensure no other application is using `Ctrl + Space`
-   - Try running the app as administrator
+1. **API Key Security**
+   - Never share your API key
+   - Don't commit the `.env` file to version control
+   - Regularly rotate your API key
+   - Set usage limits in OpenAI dashboard
 
-2. **Recording issues**:
-   - Check your default microphone in Windows settings
-   - Verify microphone permissions
+2. **Data Privacy**
+   - Audio is processed locally before sending to OpenAI
+   - Only the audio data is sent, no personal information
+   - Transcribed text is stored only in clipboard
+   - No data is permanently stored
 
-3. **API errors**:
-   - Verify your OpenAI API key in `.env`
-   - Check your internet connection
+## Support and Updates
 
-## 🤝 Contributing
+- Check the [GitHub repository](https://github.com/yourusername/windows-whisper) for updates
+- Submit issues for bugs or feature requests
+- Join our community discussions
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+## License and Credits
 
+### License
+
+This project is licensed under the MIT License - a permissive open source license that allows for:
+- ✅ Commercial use
+- ✅ Modification
+- ✅ Distribution
+- ✅ Private use
+
+Key points of the MIT License:
+- You can freely use, modify, and distribute this software
+- You must include the original copyright notice and license
+- The software comes with no warranties
+- The authors are not liable for any damages
+
+See the [LICENSE](LICENSE) file for the full license text.
+
+### Credits and Acknowledgments
+
+This project was developed with the assistance of:
+
+- **AI Development Support**:
+  - Cursor IDE's AI pair programming features
+  - Anthropic's Claude (3.5/3.7 Sonnet) for code generation and problem-solving
+
+- **Core Technologies**:
+  - [OpenAI Whisper API](https://platform.openai.com/docs/guides/speech-to-text) - Speech-to-text engine
+  - [PyQt5](https://www.riverbankcomputing.com/software/pyqt/) - UI framework
+  - [PyAudio](https://people.csail.mit.edu/hubert/pyaudio/) - Audio recording
+  - [NumPy](https://numpy.org/) - Audio processing
+  - [python-dotenv](https://github.com/theskumar/python-dotenv) - Environment management
+
+### Contributing
+
+Contributions are welcome! Please feel free to submit issues or pull requests. When contributing, please:
 1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
-## 📄 License
-
-MIT License - feel free to use this project however you'd like.
-
-## 🙏 Acknowledgments
-
-- OpenAI for the Whisper API
-- PyQt5 for the UI framework
-- The Python community for various helpful packages 
+All contributions will be released under the MIT License. 
