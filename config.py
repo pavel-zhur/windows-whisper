@@ -3,6 +3,10 @@ from dotenv import load_dotenv
 import json
 import tempfile
 
+# Application version
+APP_VERSION = "0.2.0"
+APP_NAME = "Windows Whisper"
+
 # Load environment variables from .env file
 load_dotenv()
 

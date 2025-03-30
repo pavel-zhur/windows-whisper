@@ -1,95 +1,71 @@
-# Windows Whisper v0.1.0 Release Notes
+# Windows Whisper v0.2.0 Release Notes
 
-## 🎉 Initial Release
+## 🎉 New Features and Improvements
 
-Windows Whisper is a lightweight voice-to-text tool that provides instant speech transcription using OpenAI's Whisper API. This initial release brings core functionality and a polished user experience.
+### 🌊 Enhanced Waveform Visualization
+- **Improved Audio Visualization**: Completely redesigned waveform display with smoother animation
+- **Responsive Display**: More accurate visualization that properly responds to voice input
+- **Visual Enhancements**: Added gradient coloring, smoother curves, and increased amplitude
+- **Performance Optimization**: 60 FPS rendering for fluid animation
 
-### ✨ Features
+### 🌐 Language and Transcription Improvements
+- **Explicit Language Control**: Added WHISPER_LANGUAGE setting to prevent unwanted translations
+- **Enhanced Prompt Handling**: Customizable prompts with improved punctuation and language preservation
+- **Translation Prevention**: Fixed issue where audio was being translated to incorrect languages
+- **Better Configuration**: Flexible language settings through environment variables
 
-#### Core Functionality
-- **One-Click Recording**: Start recording instantly with `Ctrl + Space` from anywhere
-- **Real-time Transcription**: Powered by OpenAI's Whisper API
-- **Automatic Clipboard**: Transcriptions are automatically copied for immediate use
-- **Multiple Language Support**: Configurable language settings for transcription
+### 📚 Documentation and Setup
+- **Comprehensive README**: Detailed setup instructions and troubleshooting guides
+- **Example Configuration**: Added .env.example with explanatory comments
+- **MIT License**: Added proper open-source licensing
+- **Quick Start Guide**: Simplified installation options for both users and developers
 
-#### User Interface
-- **Modern Overlay**: Sleek, floating interface that stays out of your way
-- **Live Waveform**: Real-time audio visualization while recording
-- **Visual Feedback**: Clear recording status and progress indicators
-- **Drag & Drop**: Moveable overlay window for optimal positioning
+### 🧹 Code Cleanup and Optimization
+- **Removed Redundancies**: Cleaned up unnecessary imports and duplicate code
+- **Improved Error Handling**: Better error messages and recovery
+- **Enhanced Logging**: More detailed logs for easier troubleshooting
+- **UI Refinements**: Various small improvements to the user interface
 
-#### Technical Features
-- **Configurable Settings**: Easy configuration via environment variables
-- **Error Handling**: Robust error management and user feedback
-- **Resource Management**: Efficient handling of temporary files
-- **Background Operation**: Minimal system resource usage
+## 🔧 Technical Details
 
-### 🔧 Technical Requirements
+### Waveform Visualization Changes
+- Increased data points from 50 to 75 for smoother visualization
+- Implemented quadratic Bézier curves for natural-looking waveforms
+- Enhanced audio level calculation with better normalization
+- Added weighted averaging for smooth level transitions
+- Improved animation timing for consistent 60 FPS rendering
 
-- Windows 10/11
-- Python 3.8 or higher
-- OpenAI API key
-- Microphone access
+### Language Processing Updates
+- Added `WHISPER_LANGUAGE` parameter to the API request
+- Customizable `WHISPER_PROMPT` with default optimized for punctuation and language preservation
+- Simplified configuration interface through environment variables
+- Enhanced error reporting for language-related issues
 
-### 📦 Installation
+## 📋 Installation and Upgrade
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/windows-whisper.git
-   cd windows-whisper
-   ```
+### New Installation
+Follow the instructions in the README.md file:
+1. Get an OpenAI API key
+2. Download the latest release
+3. Set up your .env file with your API key and preferred settings
+4. Run the application
 
-2. Create and activate virtual environment:
-   ```bash
-   python -m venv .venv
-   .venv\Scripts\activate
-   ```
+### Upgrading from Previous Version
+1. Backup your .env file if you have one
+2. Download the new release
+3. Copy your .env file to the new release directory
+4. Add the new `WHISPER_LANGUAGE=en` setting to your .env file
 
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+## 🐞 Known Issues
+- Brief delay when starting recording (1-2 seconds)
+- Some system hotkey conflicts may occur in certain applications
 
-4. Configure environment:
-   - Copy `.env.example` to `.env`
-   - Add your OpenAI API key
-   - Adjust settings as needed
-
-### ⚙️ Configuration Options
-
-| Setting | Description | Default |
-|---------|-------------|---------|
-| `OPENAI_API_KEY` | Your OpenAI API key | Required |
-| `WHISPER_MODEL` | Whisper model to use | whisper-1 |
-| `WHISPER_LANGUAGE` | Preferred language | en |
-| `MAX_RECORDING_SECONDS` | Maximum recording duration | 300 |
-| `SAMPLE_RATE` | Audio sample rate | 16000 |
-
-### 🐛 Known Issues
-
-- Brief delay (1.5s) before recording starts
-- Transcription time varies based on recording length and network speed
-
-### 🔜 Planned Features
-
-- Custom hotkey configuration
-- Multiple audio source selection
-- Offline mode with local Whisper model
-- Transcription history
-- Advanced audio processing options
-
-### 📝 Notes
-
-- This is an initial release focused on core functionality
-- Feedback and contributions are welcome
-- Please report any issues on the GitHub repository
-
-### 🙏 Acknowledgments
-
-- OpenAI for the Whisper API
-- Built with assistance from Cursor Agent powered by Claude-3.5-Sonnet
-- All contributors and early testers
+## 🔜 Upcoming Features
+- Support for additional languages and dialects
+- Local model option for offline use
+- Advanced audio filters for noisy environments
+- Customizable hotkey combinations
 
 ---
 
-For more information, visit the [GitHub repository](https://github.com/yourusername/windows-whisper). 
+Thank you for using Windows Whisper! Please report any issues on the GitHub repository. 
