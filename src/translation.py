@@ -1,7 +1,7 @@
 import requests
 import json
 import logging
-from config import OPENAI_API_KEY, TRANSFORMATION_PROMPT, TRANSFORMATION_MODEL
+from config import OPENAI_API_KEY
 
 logger = logging.getLogger("whisper_app")
 
@@ -13,17 +13,19 @@ class TextTransformationService:
         self.api_key = OPENAI_API_KEY
         self.api_endpoint = "https://api.openai.com/v1/chat/completions"
         
-    def transform_text(self, text):
+    def transform_text(self, text, model="gpt-3.5-turbo", prompt=None):
         """
-        Transform text using ChatGPT based on the configured transformation prompt
+        Transform text using ChatGPT based on the provided transformation prompt
         
         Args:
             text (str): Original text to transform
+            model (str): Model to use (default: gpt-3.5-turbo)
+            prompt (str): Transformation prompt
             
         Returns:
             tuple: (success, transformed_text_or_error)
         """
-        if not TRANSFORMATION_PROMPT:
+        if not prompt:
             # No transformation requested, just return original text
             return True, text
             
@@ -34,11 +36,11 @@ class TextTransformationService:
             }
             
             data = {
-                "model": TRANSFORMATION_MODEL,
+                "model": model,
                 "messages": [
                     {
                         "role": "system",
-                        "content": f"{TRANSFORMATION_PROMPT}\n\nReturn ONLY the transformed text, no explanations or additional content."
+                        "content": f"{prompt}\n\nReturn ONLY the transformed text, no explanations or additional content."
                     },
                     {
                         "role": "user", 
@@ -46,10 +48,10 @@ class TextTransformationService:
                     }
                 ],
                 "max_tokens": 500,
-                "temperature": 0.3  # Lower temperature for more consistent results
+                "temperature": 0.3
             }
             
-            logger.info(f"Transforming text using prompt: {TRANSFORMATION_PROMPT[:50]}...")
+            logger.info(f"Transforming text using model '{model}'")
             
             response = requests.post(
                 self.api_endpoint,

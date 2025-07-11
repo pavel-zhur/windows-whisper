@@ -9,15 +9,14 @@ from PyQt5 import QtWidgets, QtCore
 
 # Local  imports
 from config import (
-    SHORTCUT_KEY, OPENAI_API_KEY, API_ENDPOINT, 
-    WHISPER_MODEL, WHISPER_LANGUAGE, SAMPLE_RATE,
+    OPENAI_API_KEY, API_ENDPOINT, SAMPLE_RATE,
     MAX_RECORDING_SECONDS, get_temp_audio_path,
     validate_config, APP_NAME, APP_VERSION,
-    AUTO_TYPE_ENABLED, HOLD_TO_RECORD, OVERLAY_POSITION, OVERLAY_MARGIN,
-    TRANSFORMATION_PROMPT
+    AUTO_TYPE_ENABLED, OVERLAY_POSITION, OVERLAY_MARGIN
 )
 from src.audio import AudioRecorder
 from src.hotkey import setup_hold_to_record_hotkey, HoldToRecordHotkeyManager
+from src.profile_manager import ProfileManager
 from src.whisper_api import WhisperAPI
 from src.translation import TextTransformationService
 from src.clipboard import copy_to_clipboard
@@ -42,40 +41,53 @@ class WhisperApp(QtCore.QObject):
         except ValueError as e:
             logger.error(f"Configuration error: {e}")
             show_error_and_exit(str(e))
+        
+        # Initialize profile manager
+        try:
+            self.profile_manager = ProfileManager()
+            logger.info(f"Profile system initialized with {len(self.profile_manager.get_all_profiles())} profiles")
+        except Exception as e:
+            logger.error(f"Failed to initialize profile manager: {e}")
+            show_error_and_exit(f"Failed to load profiles: {e}")
             
         # Initialize components
         self.audio_recorder = AudioRecorder(sample_rate=SAMPLE_RATE)
-        self.whisper_api = WhisperAPI(
-            api_key=OPENAI_API_KEY,
-            api_endpoint=API_ENDPOINT,
-            model=WHISPER_MODEL
-        )
+        self.whisper_api = WhisperAPI(api_key=OPENAI_API_KEY, api_endpoint=API_ENDPOINT)
         self.transformation_service = TextTransformationService()
         self.auto_typer = AutoTyper()
-        
-        # Log language setting
-        if WHISPER_LANGUAGE:
-            logger.debug(f"Using language setting: {WHISPER_LANGUAGE}")
-        else:
-            logger.debug("No language specified - OpenAI will auto-detect language")
         
         # UI components
         self.recording_overlay = None
         self.is_recording = False
         
-        # Set up hold-to-record hotkey
+        # Set up hold-to-record profile hotkeys
         try:
-            logger.info(f"Setting up hold-to-record hotkey: {SHORTCUT_KEY}")
-            self.hotkey_manager = setup_hold_to_record_hotkey(SHORTCUT_KEY)
+            logger.info("Setting up profile hold-to-record hotkeys: Ctrl+1-0")
+            self.hotkey_manager = setup_hold_to_record_hotkey()
             
-            # Connect signals
-            self.hotkey_manager.recording_started.connect(self.start_recording)
+            # Connect signals - recording_started now passes profile number
+            self.hotkey_manager.recording_started.connect(self.start_recording_with_profile)
             self.hotkey_manager.recording_stopped.connect(self.stop_recording)
             
-            logger.info(f"Hold-to-record hotkey registered successfully: {SHORTCUT_KEY}")
+            logger.info("Profile hold-to-record hotkeys registered successfully")
         except Exception as e:
-            logger.error(f"Failed to register hold-to-record hotkey: {e}")
-            show_error_and_exit(f"Failed to register hotkey: {e}")
+            logger.error(f"Failed to register profile hotkeys: {e}")
+            show_error_and_exit(f"Failed to register hotkeys: {e}")
+            
+    def start_recording_with_profile(self, profile_number):
+        """Start recording with a specific profile"""
+        if not self.profile_manager.has_profile(profile_number):
+            logger.warning(f"Profile {profile_number} not found, ignoring")
+            return
+            
+        profile_name = self.profile_manager.get_profile_name(profile_number)
+        logger.info(f"Starting recording with Profile {profile_number}: {profile_name}")
+        
+        # Store the profile number for later use during processing
+        self.current_recording_profile = profile_number
+        
+        # Start the regular recording process
+        self.start_recording()
             
         # Register cleanup
         atexit.register(self.cleanup)
@@ -118,7 +130,7 @@ class WhisperApp(QtCore.QObject):
         # Show startup notification
         self.tray_icon.showMessage(
             f"{APP_NAME}", 
-            f"v{APP_VERSION} ready! Hold {SHORTCUT_KEY} to record.",
+            f"v{APP_VERSION} ready! Hold Ctrl+1-0 to record with different profiles.",
             QtWidgets.QSystemTrayIcon.Information, 
             3000
         )
@@ -207,19 +219,31 @@ class WhisperApp(QtCore.QObject):
             show_notification("Failed to save audio file", icon_type="error")
             return
             
-        # Send to Whisper API
-        logger.info(f"Sending to Whisper API: {temp_file_path}")
+        # Get the profile that was used for this recording
+        current_profile = self.profile_manager.get_profile(self.current_recording_profile)
+        whisper_config = current_profile.get('whisper', {})
+        
+        # Send to Whisper API with profile settings
+        logger.info(f"Sending to Whisper API with Profile {self.current_recording_profile}: {temp_file_path}")
         success, text_or_error = self.whisper_api.transcribe(
-            temp_file_path
+            temp_file_path,
+            model=whisper_config.get('model'),
+            language=whisper_config.get('language'),
+            prompt=whisper_config.get('prompt')
         )
         
         logger.info(f"Whisper API result - Success: {success}, Text/Error: {text_or_error}")
         
         if success:
-            # Transform the text if transformation is enabled
-            if TRANSFORMATION_PROMPT:
-                logger.info(f"Transforming text...")
-                transform_success, final_text = self.transformation_service.transform_text(text_or_error)
+            # Transform the text if transformation is configured for this profile
+            transformation_config = current_profile.get('transformation', {})
+            if transformation_config and transformation_config.get('prompt'):
+                logger.info(f"Transforming text with Profile {self.current_recording_profile}...")
+                transform_success, final_text = self.transformation_service.transform_text(
+                    text_or_error,
+                    model=transformation_config.get('model'),
+                    prompt=transformation_config.get('prompt')
+                )
                 
                 if transform_success:
                     logger.info(f"Text transformation successful: {final_text[:50]}...")

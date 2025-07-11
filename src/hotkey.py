@@ -51,26 +51,38 @@ class SimpleHotkeyManager(QtCore.QObject):
             logger.error(f"Failed to unregister simple hotkeys: {e}")
 
 class HoldToRecordHotkeyManager(QtCore.QObject):
-    """Manages hold-to-record global hotkeys"""
+    """Manages hold-to-record global hotkeys for profiles"""
     
-    recording_started = QtCore.pyqtSignal()
+    recording_started = QtCore.pyqtSignal(int)  # Emits profile number when recording starts
     recording_stopped = QtCore.pyqtSignal()
     
-    def __init__(self, shortcut_key):
-        """Initialize the hold-to-record hotkey manager"""
+    def __init__(self):
+        """Initialize the hold-to-record hotkey manager for profiles"""
         super().__init__()
-        self.shortcut_key = shortcut_key.lower()
         self.is_recording = False
-        self.is_pressed = False
+        self.active_profile = None
         self.keys_pressed = set()  # Track which keys are currently pressed
         
-        # Parse the shortcut key
-        self.keys = self._parse_shortcut(shortcut_key)
-        logger.info(f"Parsed keys for '{shortcut_key}': {self.keys}")
+        # Profile hotkey combinations (Ctrl+1 through Ctrl+0)
+        self.profile_combinations = {
+            1: ['ctrl', '1'],
+            2: ['ctrl', '2'], 
+            3: ['ctrl', '3'],
+            4: ['ctrl', '4'],
+            5: ['ctrl', '5'],
+            6: ['ctrl', '6'],
+            7: ['ctrl', '7'],
+            8: ['ctrl', '8'],
+            9: ['ctrl', '9'],
+            0: ['ctrl', '0']  # Ctrl+0 = profile 0 (or 10)
+        }
+        
+        # All keys we need to monitor
+        self.monitored_keys = {'ctrl', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'}
         
         # Set up key event handlers - use hook for reliable detection
         keyboard.hook(self._on_key_event, suppress=False)
-        logger.info(f"Hold-to-record hotkey registered: {shortcut_key}")
+        logger.info(f"Hold-to-record profile hotkeys registered: Ctrl+1-0")
         
         # Test if keyboard hook is working at all
         logger.info("Testing keyboard hook registration...")
@@ -80,44 +92,28 @@ class HoldToRecordHotkeyManager(QtCore.QObject):
         except Exception as e:
             logger.error(f"Keyboard library test failed: {e}")
         
-    def _parse_shortcut(self, shortcut):
-        """Parse shortcut string into individual keys"""
-        parts = shortcut.lower().replace(' ', '').split('+')
-        keys = []
-        for part in parts:
-            if part == 'win':
-                keys.append('windows')
-            elif part == 'ctrl':
-                keys.append('ctrl')
-            elif part == 'alt':
-                keys.append('alt')
-            elif part == 'shift':
-                keys.append('shift')
-            else:
-                keys.append(part)
-        return keys
-        
     def _on_key_event(self, event):
-        """Handle key events - properly filter for physical key presses only"""
+        """Handle key events for profile hold-to-record"""
         try:
-            # Skip if not one of our keys
-            if event.name not in self.keys:
+            # Skip if not one of our monitored keys
+            if event.name not in self.monitored_keys:
                 return
                 
-            # This is the critical fix: only process the FIRST key down event, ignore repeats
             if event.event_type == keyboard.KEY_DOWN:
-                # Add key to pressed set
+                # Add key to pressed set (ignore repeats)
                 if event.name not in self.keys_pressed:
                     self.keys_pressed.add(event.name)
                     logger.debug(f"Key pressed: {event.name}, currently pressed: {self.keys_pressed}")
                     
-                    # Check if we now have the complete combination
-                    if not self.is_pressed and set(self.keys) <= self.keys_pressed:
-                        self.is_pressed = True
-                        if not self.is_recording:
-                            logger.info("Hold-to-record: Starting recording")
-                            self.is_recording = True
-                            self.recording_started.emit()
+                    # Check if we have a complete profile combination and not already recording
+                    if not self.is_recording:
+                        for profile_num, key_combo in self.profile_combinations.items():
+                            if set(key_combo) <= self.keys_pressed:
+                                logger.info(f"Profile hold-to-record started: Ctrl+{profile_num % 10} (Profile {profile_num})")
+                                self.is_recording = True
+                                self.active_profile = profile_num
+                                self.recording_started.emit(profile_num)
+                                break
                         
             elif event.event_type == keyboard.KEY_UP:
                 # Remove key from pressed set
@@ -125,23 +121,17 @@ class HoldToRecordHotkeyManager(QtCore.QObject):
                     self.keys_pressed.discard(event.name)
                     logger.debug(f"Key released: {event.name}, currently pressed: {self.keys_pressed}")
                     
-                    # Check if we no longer have the complete combination
-                    if self.is_pressed and not (set(self.keys) <= self.keys_pressed):
-                        self.is_pressed = False
-                        if self.is_recording:
-                            logger.info("Hold-to-record: Stopping recording")
+                    # Check if recording should stop (if the active profile combination is no longer held)
+                    if self.is_recording and self.active_profile is not None:
+                        active_combo = self.profile_combinations[self.active_profile]
+                        if not (set(active_combo) <= self.keys_pressed):
+                            logger.info(f"Profile hold-to-record stopped: Profile {self.active_profile}")
                             self.is_recording = False
+                            self.active_profile = None
                             self.recording_stopped.emit()
+                        
         except Exception as e:
-            logger.error(f"Error in key event handler: {e}")
-            
-    def _is_hotkey_combination(self):
-        """Check if the hotkey combination is currently pressed"""
-        try:
-            return set(self.keys) <= self.keys_pressed
-        except Exception as e:
-            logger.error(f"Error checking hotkey combination: {e}")
-            return False
+            logger.error(f"Error in profile hold-to-record event handler: {e}")
             
     def unregister_all(self):
         """Unregister all hotkeys"""
@@ -181,10 +171,10 @@ class HotkeyManager(QtCore.QObject):
         except Exception as e:
             logger.error(f"Failed to unregister hotkeys: {e}")
 
-def setup_hold_to_record_hotkey(shortcut_key):
-    """Set up hold-to-record global hotkey"""
+def setup_hold_to_record_hotkey():
+    """Set up hold-to-record profile hotkeys"""
     try:
-        return HoldToRecordHotkeyManager(shortcut_key)
+        return HoldToRecordHotkeyManager()
     except Exception as e:
         logger.error(f"Failed to register hold-to-record hotkey: {e}")
         raise
