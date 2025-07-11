@@ -5,7 +5,7 @@ import logging
 import time
 from config import WHISPER_LANGUAGE, WHISPER_PROMPT
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("whisper_app")
 
 class WhisperAPI:
     """
@@ -22,8 +22,12 @@ class WhisperAPI:
         """
         self.api_key = api_key
         self.api_endpoint = api_endpoint
-        self.model = "whisper-1"  # Enforcing whisper-1 as it's the only available API model
+        self.model = model  # Use the specified model
         logger.debug(f"WhisperAPI initialized with endpoint: {api_endpoint}, model: {self.model}")
+        
+        # Debug the prompt loading
+        logger.info(f"WHISPER_PROMPT loaded from config: '{WHISPER_PROMPT}'")
+        logger.info(f"WHISPER_LANGUAGE loaded from config: '{WHISPER_LANGUAGE}'")
         
     def transcribe(self, audio_file_path):
         """
@@ -56,12 +60,25 @@ class WhisperAPI:
                 
                 data = {
                     "model": self.model,
-                    "response_format": "json",
-                    "language": WHISPER_LANGUAGE,
-                    "prompt": WHISPER_PROMPT
+                    "response_format": "json"
                 }
                 
-                logger.info(f"Sending request to Whisper API with model: {self.model}, language: {WHISPER_LANGUAGE}")
+                # Only add language if it's explicitly set
+                if WHISPER_LANGUAGE:
+                    data["language"] = WHISPER_LANGUAGE
+                    logger.info(f"Using language setting: {WHISPER_LANGUAGE}")
+                else:
+                    logger.info("No language specified - OpenAI will auto-detect and not translate")
+                
+                # Only add prompt if it's explicitly set
+                logger.info(f"Checking WHISPER_PROMPT value: '{WHISPER_PROMPT}' (type: {type(WHISPER_PROMPT)})")
+                if WHISPER_PROMPT:
+                    data["prompt"] = WHISPER_PROMPT
+                    logger.info(f"Using custom prompt: {WHISPER_PROMPT}")
+                else:
+                    logger.info("No custom prompt - using OpenAI defaults")
+                
+                logger.info(f"Sending request to Whisper API with model: {self.model}")
                 start_time = time.time()
                 
                 response = requests.post(

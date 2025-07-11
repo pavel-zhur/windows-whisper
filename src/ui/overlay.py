@@ -169,27 +169,28 @@ class RecordingOverlay(QtWidgets.QWidget):
         super().__init__(parent)
         self.opacity = opacity
         
-        # Set focus policy to strongly want focus
-        self.setFocusPolicy(QtCore.Qt.StrongFocus)
-        
         # Set window properties first for faster display
         self.setWindowFlags(
             QtCore.Qt.WindowStaysOnTopHint |
             QtCore.Qt.FramelessWindowHint |
-            QtCore.Qt.Tool
+            QtCore.Qt.Tool |
+            QtCore.Qt.WindowDoesNotAcceptFocus  # Don't steal focus
         )
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        # Remove WA_ShowWithoutActivating to allow window to gain focus automatically
-        # self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)
+        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)  # Show without taking focus
         self.setWindowOpacity(self.opacity)
         
+        # Remove focus policies to prevent stealing focus
+        self.setFocusPolicy(QtCore.Qt.NoFocus)
+        
         # Show window immediately before heavy initialization
-        self.resize(300, 180)
-        self.center_on_screen()
+        self.resize(200, 120)  # Smaller size: 200x120 instead of 300x180
+        
+        # Position in top-right corner
+        from config import OVERLAY_POSITION, OVERLAY_MARGIN
+        self.position_in_corner(OVERLAY_POSITION, OVERLAY_MARGIN)
         self.show()
-        self.raise_()
-        self.activateWindow()
-        self.setFocus()  # Explicitly request keyboard focus
+        # Don't steal focus - the overlay should appear but not interfere
         
         # Fast initialization of basic UI elements (time-critical ones)
         self.timer_label = QtWidgets.QLabel("00:00")
@@ -212,9 +213,6 @@ class RecordingOverlay(QtWidgets.QWidget):
         # Use a short timer to start recording after UI is fully displayed
         logger.debug("Setting up timer to emit recording_started signal with slight delay")
         QtCore.QTimer.singleShot(100, self._emit_recording_started)
-        
-        # Use a timer to ensure focus is set after window is fully created
-        QtCore.QTimer.singleShot(200, self._ensure_focus)
         
     def setup_ui(self):
         """Set up the UI components"""
@@ -373,13 +371,31 @@ class RecordingOverlay(QtWidgets.QWidget):
             self.animation_label.setStyleSheet("color: transparent; font-size: 16px;")
         self.animation_state = not self.animation_state
         
+    def position_in_corner(self, position="top-right", margin=100):
+        """Position the widget in a screen corner"""
+        screen = QtWidgets.QDesktopWidget().screenGeometry()
+        
+        if position == "top-right":
+            x = screen.width() - self.width() - margin
+            y = margin
+        elif position == "top-left":
+            x = margin
+            y = margin
+        elif position == "bottom-right":
+            x = screen.width() - self.width() - margin
+            y = screen.height() - self.height() - margin
+        elif position == "bottom-left":
+            x = margin
+            y = screen.height() - self.height() - margin
+        else:  # center (fallback)
+            x = (screen.width() - self.width()) // 2
+            y = (screen.height() - self.height()) // 2
+            
+        self.move(x, y)
+        
     def center_on_screen(self):
         """Center the widget on screen"""
-        screen = QtWidgets.QDesktopWidget().screenGeometry()
-        size = self.geometry()
-        x = (screen.width() - size.width()) // 2
-        y = (screen.height() - size.height()) // 2
-        self.move(x, y)
+        self.position_in_corner("center")
         
     def finish_recording(self):
         """Signal that recording is done"""
@@ -443,9 +459,9 @@ class RecordingOverlay(QtWidgets.QWidget):
                 self.close()
         
     def showEvent(self, event):
-        """Handle show event to ensure focus is set"""
+        """Handle show event"""
         super().showEvent(event)
-        self._ensure_focus()
+        # Don't set focus - we want to stay in background
         
     def paintEvent(self, event):
         """Custom paint event for rounded rectangle background"""
@@ -500,11 +516,6 @@ class RecordingOverlay(QtWidgets.QWidget):
         """Emit the recording_started signal after a slight delay"""
         logger.debug("Emitting recording_started signal")
         self.recording_started.emit()
-
-    def _ensure_focus(self):
-        """Ensure focus is set after window is fully created"""
-        self.activateWindow()
-        self.setFocus()
 
     def start_new_recording(self):
         """Start a new recording"""
