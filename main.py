@@ -177,8 +177,8 @@ class WhisperApp(QtCore.QObject):
         atexit.register(self.cleanup)
         signal.signal(signal.SIGINT, self.signal_handler)
         
-        # Pre-initialize audio system to reduce startup delay
-        self.audio_recorder.pre_initialize()
+        # Don't pre-initialize audio to avoid mic activation on startup
+        # self.audio_recorder.pre_initialize()
         
         # Create system tray icon
         self.create_tray_icon()
@@ -194,9 +194,14 @@ class WhisperApp(QtCore.QObject):
         if hasattr(self, 'tray_icon'):
             self._update_tray_icon()
             
-        # Update overlay if it's visible
+        # Update overlay if it's visible (thread-safe)
         if hasattr(self, 'recording_overlay') and self.recording_overlay.isVisible():
-            self.recording_overlay.update_active_profile(profile_number, profile_name)
+            QtCore.QMetaObject.invokeMethod(
+                self.recording_overlay, "update_active_profile",
+                QtCore.Qt.QueuedConnection,
+                QtCore.Q_ARG(int, profile_number),
+                QtCore.Q_ARG(str, profile_name)
+            )
     
     def on_recording_mode_start(self, profile_number):
         """Handle start of recording mode (Ctrl+Shift held)"""
@@ -277,29 +282,49 @@ class WhisperApp(QtCore.QObject):
         # Don't show startup notification
         
     def _update_tray_icon(self, recording=False):
-        """Update tray icon with mic symbol and current profile number"""
-        from PyQt5.QtGui import QPixmap, QPainter, QFont, QColor, QBrush
+        """Update tray icon with golden mic symbol and current profile number"""
+        from PyQt5.QtGui import QPixmap, QPainter, QFont, QColor, QBrush, QLinearGradient
         
-        # Create a 32x32 pixmap
-        pixmap = QPixmap(32, 32)
+        # Create a 48x48 pixmap for better visibility
+        pixmap = QPixmap(48, 48)
         pixmap.fill(QtCore.Qt.transparent)
         
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing)
         
-        # Draw mic icon - red when recording, dark when idle
-        mic_color = QColor(220, 50, 50) if recording else QColor(40, 40, 40)
-        painter.setPen(QtCore.Qt.NoPen)
-        painter.setBrush(mic_color)
+        # Golden gradient for the mic
+        if recording:
+            # Bright golden-red when recording
+            gradient = QLinearGradient(12, 4, 28, 24)
+            gradient.setColorAt(0, QColor(255, 215, 0))  # Gold
+            gradient.setColorAt(0.5, QColor(255, 140, 0))  # Dark orange 
+            gradient.setColorAt(1, QColor(220, 50, 50))  # Red
+        else:
+            # Classic golden mic when idle
+            gradient = QLinearGradient(12, 4, 28, 24)
+            gradient.setColorAt(0, QColor(255, 235, 100))  # Light gold
+            gradient.setColorAt(0.5, QColor(255, 215, 0))  # Gold
+            gradient.setColorAt(1, QColor(184, 134, 11))  # Dark golden rod
         
-        # Mic body (rounded rectangle) - made larger
-        painter.drawRoundedRect(8, 2, 12, 16, 6, 6)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(QBrush(gradient))
+        
+        # Mic body (rounded rectangle) - larger and more elegant
+        painter.drawRoundedRect(12, 4, 18, 24, 9, 9)
+        
+        # Mic grill lines for classic look
+        painter.setPen(QtGui.QPen(QColor(0, 0, 0, 80), 1))
+        for i in range(3):
+            y = 8 + i * 6
+            painter.drawLine(16, y, 26, y)
         
         # Mic stand
-        painter.drawRect(13, 18, 3, 6)
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(QColor(120, 120, 120))
+        painter.drawRect(19, 28, 4, 8)
         
         # Mic base
-        painter.drawRect(7, 24, 14, 3)
+        painter.drawRect(10, 36, 20, 4)
         
         # Draw notification-style badge for profile number
         profile_str = str(self.hotkey_manager.current_profile) if hasattr(self, 'hotkey_manager') else "1"
@@ -309,15 +334,15 @@ class WhisperApp(QtCore.QObject):
         painter.setBrush(badge_color)
         painter.setPen(QtCore.Qt.NoPen)
         
-        # Bigger badge
-        badge_size = 18
-        badge_x = 32 - badge_size - 1
-        badge_y = 1
+        # Bigger badge for 48x48 icon
+        badge_size = 20
+        badge_x = 48 - badge_size - 2
+        badge_y = 2
         painter.drawEllipse(badge_x, badge_y, badge_size, badge_size)
         
         # Draw profile number in badge - BIGGER font
         painter.setPen(QColor(255, 255, 255))  # White text
-        font = QFont("Arial", 12, QFont.Bold)  # Increased from 9 to 12
+        font = QFont("Arial", 14, QFont.Bold)  # Increased to 14
         painter.setFont(font)
         
         badge_rect = QtCore.QRect(badge_x, badge_y, badge_size, badge_size)

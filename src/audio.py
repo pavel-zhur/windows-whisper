@@ -263,21 +263,18 @@ class AudioRecorder:
             rms = np.sqrt(np.mean(np.square(audio_data.astype(np.float32))))
             
             # Set noise floor and normalization values
-            noise_floor = 500  # Adjust for typical indoor ambient noise
-            max_level = 15000  # Typical maximum for normal speech
+            noise_floor = 100  # Much lower noise floor for better sensitivity
+            max_level = 8000   # Lower max for typical speech levels
             
             # Apply noise gate
             if rms < noise_floor:
                 return 0.0
                 
-            # Normalize with adjusted range and log scaling
+            # Normalize linearly (no log here - we'll do compression in the UI)
             normalized = (rms - noise_floor) / (max_level - noise_floor)
             normalized = max(0.0, min(normalized, 1.0))
             
-            # Apply log scaling for better dynamics
-            level = np.log10(normalized * 9 + 1) / np.log10(10)
-            
-            return level
+            return normalized
             
         except Exception as e:
             logger.error(f"Error calculating audio level: {e}")
