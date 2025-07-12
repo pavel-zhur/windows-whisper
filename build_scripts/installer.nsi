@@ -72,7 +72,7 @@ Section "!${APP_NAME} (Required)" SecMain
     
     ; Install configuration files
     File "..\profiles.yaml"
-    File /oname=".env.example" "..\.env.example"
+    File /oname=.env.example "..\.env.example"
     File "..\README.md"
     File "..\LICENSE"
     
