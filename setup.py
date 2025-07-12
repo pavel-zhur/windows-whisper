@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="windows-whisper",
-    version="0.1.0",
+    version="0.3.0",
     description="A lightweight voice-to-text tool triggered by Ctrl + Space using OpenAI's Whisper API",
     author="Your Name",
     author_email="your.email@example.com",

@@ -48,7 +48,7 @@ This will:
 ## Build Output
 
 - **Executable**: `../dist/WindowsWhisper.exe` (single-file, ~50-80 MB)
-- **Installer**: `WindowsWhisper-0.2.0-Setup.exe` (includes auto-update, shortcuts, etc.)
+- **Installer**: `WindowsWhisper-0.3.0-Setup.exe` (includes auto-update, shortcuts, etc.)
 
 ## Configuration Files
 
