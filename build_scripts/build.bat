@@ -70,13 +70,13 @@ if errorlevel 1 (
 )
 
 :: Check if executable was created
-if not exist "..\dist\WindowsWhisper.exe" (
+if not exist "dist\WindowsWhisper.exe" (
     echo ERROR: Executable not found after build
     pause
     exit /b 1
 )
 
-echo SUCCESS: Executable built at ..\dist\WindowsWhisper.exe
+echo SUCCESS: Executable built at dist\WindowsWhisper.exe
 
 :: Create installer if NSIS is available
 if "%SKIP_INSTALLER%"=="0" (
@@ -98,13 +98,13 @@ if "%SKIP_INSTALLER%"=="0" (
     if defined INSTALLER_NAME (
         echo.
         echo Build completed successfully!
-        echo Executable: ..\dist\WindowsWhisper.exe
+        echo Executable: dist\WindowsWhisper.exe
         echo Installer: !INSTALLER_NAME!
     )
 ) else (
     echo.
     echo Build completed successfully!
-    echo Executable: ..\dist\WindowsWhisper.exe
+    echo Executable: dist\WindowsWhisper.exe
     echo Note: Install NSIS to create Windows installer
 )
 
@@ -112,7 +112,7 @@ echo.
 echo ================================
 echo Build Summary
 echo ================================
-echo Executable: %CD%\..\dist\WindowsWhisper.exe
+echo Executable: %CD%\dist\WindowsWhisper.exe
 if "%SKIP_INSTALLER%"=="0" (
     echo Installer: %CD%\!INSTALLER_NAME!
 ) else (
@@ -121,14 +121,14 @@ if "%SKIP_INSTALLER%"=="0" (
 echo.
 
 :: Get file size
-for %%f in ("..\dist\WindowsWhisper.exe") do (
+for %%f in ("dist\WindowsWhisper.exe") do (
     set /a "size=%%~zf/1024/1024"
     echo Executable size: !size! MB
 )
 
 echo.
 echo You can now test the executable by running:
-echo %CD%\..\dist\WindowsWhisper.exe
+echo %CD%\dist\WindowsWhisper.exe
 echo.
 
 pause

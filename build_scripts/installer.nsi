@@ -68,7 +68,7 @@ Section "!${APP_NAME} (Required)" SecMain
     SetOutPath "$INSTDIR"
     
     ; Install main executable
-    File "..\dist\WindowsWhisper.exe"
+    File "dist\WindowsWhisper.exe"
     
     ; Install configuration files
     File "..\profiles.yaml"
