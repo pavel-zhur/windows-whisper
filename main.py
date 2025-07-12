@@ -27,6 +27,84 @@ from src.utils import setup_logging, clean_temp_files
 # Set up logging
 logger = setup_logging()
 
+class ProcessingWorker(QtCore.QThread):
+    """Worker thread for processing recordings to keep UI responsive"""
+    # Signals
+    status_update = QtCore.pyqtSignal(str, str)  # status_text, status_type
+    transcription_complete = QtCore.pyqtSignal(str)  # transcribed_text
+    transformation_complete = QtCore.pyqtSignal(str)  # transformed_text
+    processing_complete = QtCore.pyqtSignal(bool, str)  # success, final_text_or_error
+    processing_error = QtCore.pyqtSignal(str)  # error_message
+    
+    def __init__(self, audio_recorder, whisper_api, transformation_service, 
+                 profile_manager, current_profile_number, temp_file_path):
+        super().__init__()
+        self.audio_recorder = audio_recorder
+        self.whisper_api = whisper_api
+        self.transformation_service = transformation_service
+        self.profile_manager = profile_manager
+        self.current_profile_number = current_profile_number
+        self.temp_file_path = temp_file_path
+        
+    def run(self):
+        """Process the recording in a separate thread"""
+        try:
+            # Save audio file
+            if not self.audio_recorder.save_wav(self.temp_file_path):
+                self.processing_error.emit("Failed to save audio file")
+                return
+                
+            # Get profile configuration
+            current_profile = self.profile_manager.get_profile(self.current_profile_number)
+            whisper_config = current_profile.get('whisper', {})
+            
+            # Transcribe
+            self.status_update.emit("Transcribing...", "processing")
+            logger.info(f"Sending to Whisper API with Profile {self.current_profile_number}: {self.temp_file_path}")
+            
+            success, text_or_error = self.whisper_api.transcribe(
+                self.temp_file_path,
+                model=whisper_config.get('model'),
+                language=whisper_config.get('language'),
+                prompt=whisper_config.get('prompt')
+            )
+            
+            if not success:
+                logger.error(f"Transcription error: {text_or_error}")
+                self.processing_error.emit(text_or_error)
+                return
+                
+            # Log and emit transcribed text
+            logger.info(f"Transcribed: {text_or_error}")
+            self.transcription_complete.emit(text_or_error)
+            
+            # Transform if needed
+            transformation_config = current_profile.get('transformation', {})
+            if transformation_config and transformation_config.get('prompt'):
+                self.status_update.emit("Transforming...", "processing")
+                logger.info(f"Transforming text with Profile {self.current_profile_number}...")
+                
+                transform_success, transformed_text = self.transformation_service.transform_text(
+                    text_or_error,
+                    model=transformation_config.get('model'),
+                    prompt=transformation_config.get('prompt')
+                )
+                
+                if transform_success:
+                    logger.info(f"Transformed: {transformed_text}")
+                    self.transformation_complete.emit(transformed_text)
+                    self.processing_complete.emit(True, transformed_text)
+                else:
+                    logger.error(f"Text transformation failed: {transformed_text}")
+                    self.processing_error.emit(f"Transformation failed: {transformed_text}")
+            else:
+                # No transformation needed
+                self.processing_complete.emit(True, text_or_error)
+                
+        except Exception as e:
+            logger.error(f"Processing error: {e}")
+            self.processing_error.emit(str(e))
+
 class WhisperApp(QtCore.QObject):
     """
     Main application class for Windows Whisper
@@ -41,6 +119,9 @@ class WhisperApp(QtCore.QObject):
         except ValueError as e:
             logger.error(f"Configuration error: {e}")
             show_error_and_exit(str(e))
+        
+        # Worker thread reference
+        self.processing_worker = None
         
         # Initialize profile manager
         try:
@@ -332,9 +413,6 @@ class WhisperApp(QtCore.QObject):
         if hasattr(self, 'tray_icon'):
             self._update_tray_icon(recording=False)
         
-        # Keep overlay visible during processing
-        # It will be hidden later when we start auto-typing
-        
         # Stop recording
         if not self.audio_recorder.stop_recording():
             logger.error("Failed to stop recording - no recording in progress")
@@ -347,62 +425,37 @@ class WhisperApp(QtCore.QObject):
             self._cleanup_overlay()
             return
         
-        # Save to temp file
+        # Get temp file path
         temp_file_path = get_temp_audio_path()
-        if not self.audio_recorder.save_wav(temp_file_path):
-            logger.error("Failed to save audio file")
-            self._cleanup_overlay()
-            return
-            
-        # Get the currently active profile (from profile manager)
-        current_profile_number = self.hotkey_manager.current_profile
-        current_profile = self.profile_manager.get_profile(current_profile_number)
-        whisper_config = current_profile.get('whisper', {})
         
-        # Send to Whisper API with profile settings
-        logger.info(f"Sending to Whisper API with Profile {current_profile_number}: {temp_file_path}")
-        
-        # Show transcribing status
-        if self.recording_overlay and self.recording_overlay.isVisible():
-            self.recording_overlay.show_status("Transcribing...", "processing")
-            
-        success, text_or_error = self.whisper_api.transcribe(
-            temp_file_path,
-            model=whisper_config.get('model'),
-            language=whisper_config.get('language'),
-            prompt=whisper_config.get('prompt')
+        # Create and start processing worker
+        self.processing_worker = ProcessingWorker(
+            self.audio_recorder,
+            self.whisper_api,
+            self.transformation_service,
+            self.profile_manager,
+            self.hotkey_manager.current_profile,
+            temp_file_path
         )
         
+        # Connect signals
+        self.processing_worker.status_update.connect(self._on_processing_status_update)
+        self.processing_worker.processing_complete.connect(self._on_processing_complete)
+        self.processing_worker.processing_error.connect(self._on_processing_error)
         
+        # Start processing in background thread
+        self.processing_worker.start()
+    
+    @QtCore.pyqtSlot(str, str)
+    def _on_processing_status_update(self, status_text, status_type):
+        """Handle status updates from processing worker"""
+        if self.recording_overlay and self.recording_overlay.isVisible():
+            self.recording_overlay.show_status(status_text, status_type)
+    
+    @QtCore.pyqtSlot(bool, str)
+    def _on_processing_complete(self, success, final_text):
+        """Handle processing completion"""
         if success:
-            # Log the original transcribed text
-            logger.info(f"Transcribed: {text_or_error}")
-            
-            # Transform the text if transformation is configured for this profile
-            transformation_config = current_profile.get('transformation', {})
-            if transformation_config and transformation_config.get('prompt'):
-                logger.info(f"Transforming text with Profile {current_profile_number}...")
-                
-                # Show transforming status
-                if self.recording_overlay and self.recording_overlay.isVisible():
-                    self.recording_overlay.show_status("Transforming...", "processing")
-                    
-                transform_success, transformed_text = self.transformation_service.transform_text(
-                    text_or_error,
-                    model=transformation_config.get('model'),
-                    prompt=transformation_config.get('prompt')
-                )
-                
-                if transform_success:
-                    final_text = transformed_text
-                    logger.info(f"Transformed: {transformed_text}")
-                else:
-                    logger.error(f"Text transformation failed: {transformed_text}")
-                    self._cleanup_overlay()
-                    return  # Stop processing if transformation fails
-            else:
-                final_text = text_or_error
-            
             # Auto-type the result
             try:
                 logger.info("Preparing to type text...")
@@ -417,16 +470,39 @@ class WhisperApp(QtCore.QObject):
                 
             except Exception as e:
                 logger.error(f"Auto-typing error: {e}")
-        else:
-            # Log error
-            logger.error(f"Transcription error: {text_or_error}")
-            self._cleanup_overlay()
-                
+        
         # Clean up temp file
+        temp_file_path = get_temp_audio_path()
         try:
             os.remove(temp_file_path)
         except Exception as e:
             logger.warning(f"Failed to remove temporary file: {e}")
+            
+        # Clean up worker
+        if self.processing_worker:
+            self.processing_worker.wait()
+            self.processing_worker.deleteLater()
+            self.processing_worker = None
+    
+    @QtCore.pyqtSlot(str)
+    def _on_processing_error(self, error_message):
+        """Handle processing errors"""
+        logger.error(f"Processing error: {error_message}")
+        self._cleanup_overlay()
+        
+        # Clean up temp file
+        temp_file_path = get_temp_audio_path()
+        if os.path.exists(temp_file_path):
+            try:
+                os.remove(temp_file_path)
+            except Exception as e:
+                logger.warning(f"Failed to remove temporary file: {e}")
+        
+        # Clean up worker
+        if self.processing_worker:
+            self.processing_worker.wait()
+            self.processing_worker.deleteLater()
+            self.processing_worker = None
             
     def cancel_recording(self):
         """Cancel the current recording"""
