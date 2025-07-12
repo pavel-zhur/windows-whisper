@@ -6,7 +6,7 @@ import time
 import atexit
 import signal
 import threading
-from PyQt5 import QtWidgets, QtCore
+from PyQt5 import QtWidgets, QtCore, QtGui
 
 # Local  imports
 from config import (
@@ -67,6 +67,11 @@ class WhisperApp(QtCore.QObject):
         self.recording_overlay.recording_cancelled.connect(self.cancel_recording)
         self.recording_overlay.hide()  # Start hidden
         
+        # Set profiles in overlay
+        all_profiles = self.profile_manager.get_all_profiles()
+        profile_info = {num: self.profile_manager.get_profile_name(num) for num in all_profiles}
+        self.recording_overlay.set_profiles(profile_info)
+        
         # Set up profile switching hotkeys
         try:
             
@@ -103,6 +108,14 @@ class WhisperApp(QtCore.QObject):
         """Handle profile switching"""
         profile_name = self.profile_manager.get_profile_name(profile_number)
         logger.info(f"Switched to Profile {profile_number}: {profile_name}")
+        
+        # Update tray icon to show new profile number
+        if hasattr(self, 'tray_icon'):
+            self._update_tray_icon()
+            
+        # Update overlay if it's visible
+        if hasattr(self, 'recording_overlay') and self.recording_overlay.isVisible():
+            self.recording_overlay.update_active_profile(profile_number, profile_name)
     
     def on_recording_mode_start(self, profile_number):
         """Handle start of recording mode (Ctrl+Shift held)"""
@@ -166,9 +179,8 @@ class WhisperApp(QtCore.QObject):
         """Create system tray icon"""
         self.tray_icon = QtWidgets.QSystemTrayIcon()
         
-        # Set icon (placeholder - would need an actual icon file)
-        self.tray_icon.setIcon(QtWidgets.QApplication.style().standardIcon(
-            QtWidgets.QStyle.SP_MessageBoxInformation))
+        # Create initial icon with profile number
+        self._update_tray_icon()
             
         # Create menu
         tray_menu = QtWidgets.QMenu()
@@ -182,6 +194,58 @@ class WhisperApp(QtCore.QObject):
         self.tray_icon.show()
         
         # Don't show startup notification
+        
+    def _update_tray_icon(self):
+        """Update tray icon with mic symbol and current profile number"""
+        from PyQt5.QtGui import QPixmap, QPainter, QFont, QColor, QBrush
+        
+        # Create a 32x32 pixmap
+        pixmap = QPixmap(32, 32)
+        pixmap.fill(QtCore.Qt.transparent)
+        
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Draw mic icon (darker and larger)
+        mic_color = QColor(40, 40, 40)  # Dark gray/black mic
+        painter.setPen(QtCore.Qt.NoPen)
+        painter.setBrush(mic_color)
+        
+        # Mic body (rounded rectangle) - made larger
+        painter.drawRoundedRect(8, 2, 12, 16, 6, 6)
+        
+        # Mic stand
+        painter.drawRect(13, 18, 3, 6)
+        
+        # Mic base
+        painter.drawRect(7, 24, 14, 3)
+        
+        # Draw notification-style badge for profile number
+        profile_str = str(self.hotkey_manager.current_profile) if hasattr(self, 'hotkey_manager') else "1"
+        
+        # Badge background - bright color for visibility
+        badge_color = QColor(220, 50, 50)  # Red badge
+        painter.setBrush(badge_color)
+        painter.setPen(QtCore.Qt.NoPen)
+        
+        # Badge circle in top-right
+        badge_size = 14
+        badge_x = 32 - badge_size - 2
+        badge_y = 2
+        painter.drawEllipse(badge_x, badge_y, badge_size, badge_size)
+        
+        # Draw profile number in badge
+        painter.setPen(QColor(255, 255, 255))  # White text
+        font = QFont("Arial", 9, QFont.Bold)
+        painter.setFont(font)
+        
+        badge_rect = QtCore.QRect(badge_x, badge_y, badge_size, badge_size)
+        painter.drawText(badge_rect, QtCore.Qt.AlignCenter, profile_str)
+        
+        painter.end()
+        
+        # Set the icon
+        self.tray_icon.setIcon(QtGui.QIcon(pixmap))
         
     def start_recording(self):
         """Start audio recording and show overlay with minimal delay"""
@@ -198,6 +262,11 @@ class WhisperApp(QtCore.QObject):
             logger.debug(f"Starting recording from thread: {threading.current_thread().name}")
             # Reset the overlay for a new recording
             self.recording_overlay.reset_for_recording()
+            
+            # Update active profile in overlay
+            current_profile = self.hotkey_manager.current_profile
+            profile_name = self.profile_manager.get_profile_name(current_profile)
+            self.recording_overlay.update_active_profile(current_profile, profile_name)
             
             # Show overlay
             self.recording_overlay.show()
@@ -278,6 +347,11 @@ class WhisperApp(QtCore.QObject):
         
         # Send to Whisper API with profile settings
         logger.info(f"Sending to Whisper API with Profile {current_profile_number}: {temp_file_path}")
+        
+        # Show transcribing status
+        if self.recording_overlay and self.recording_overlay.isVisible():
+            self.recording_overlay.show_status("Transcribing...", "processing")
+            
         success, text_or_error = self.whisper_api.transcribe(
             temp_file_path,
             model=whisper_config.get('model'),
@@ -294,6 +368,11 @@ class WhisperApp(QtCore.QObject):
             transformation_config = current_profile.get('transformation', {})
             if transformation_config and transformation_config.get('prompt'):
                 logger.info(f"Transforming text with Profile {current_profile_number}...")
+                
+                # Show transforming status
+                if self.recording_overlay and self.recording_overlay.isVisible():
+                    self.recording_overlay.show_status("Transforming...", "processing")
+                    
                 transform_success, transformed_text = self.transformation_service.transform_text(
                     text_or_error,
                     model=transformation_config.get('model'),

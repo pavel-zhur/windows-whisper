@@ -168,6 +168,8 @@ class RecordingOverlay(QtWidgets.QWidget):
         """
         super().__init__(parent)
         self.opacity = opacity
+        self.profiles = {}  # Will be populated with profile data
+        self.active_profile = 1
         
         # Set window properties first for faster display
         self.setWindowFlags(
@@ -184,7 +186,7 @@ class RecordingOverlay(QtWidgets.QWidget):
         self.setFocusPolicy(QtCore.Qt.NoFocus)
         
         # Show window immediately before heavy initialization
-        self.resize(200, 120)  # Smaller size: 200x120 instead of 300x180
+        self.resize(300, 150)  # Adjusted size to fit profile display
         
         # Position in top-right corner
         from config import OVERLAY_POSITION, OVERLAY_MARGIN
@@ -253,6 +255,11 @@ class RecordingOverlay(QtWidgets.QWidget):
             self.cancel_recording()
         close_btn.clicked.connect(on_close_btn_clicked)
         title_layout.addWidget(close_btn)
+        
+        # Add profile display
+        self.profiles_label = QtWidgets.QLabel()
+        self.profiles_label.setStyleSheet("color: #cccccc; font-size: 11px;")
+        self.profiles_label.setWordWrap(True)
         
         # Add waveform widget
         self.waveform = WaveformWidget(self)
@@ -337,6 +344,7 @@ class RecordingOverlay(QtWidgets.QWidget):
         
         # Add layouts to main layout
         main_layout.addLayout(title_layout)
+        main_layout.addWidget(self.profiles_label)  # Add profiles display
         main_layout.addSpacing(5)
         main_layout.addWidget(self.waveform)  # Add waveform widget
         main_layout.addLayout(status_layout)
@@ -565,6 +573,43 @@ class RecordingOverlay(QtWidgets.QWidget):
         # Emit signal to start actual recording
         logger.info("Starting new recording")
         self.recording_started.emit()
+    
+    def set_profiles(self, profiles):
+        """Set the available profiles"""
+        self.profiles = profiles
+        self._update_profiles_display()
+        
+    def update_active_profile(self, profile_number, profile_name):
+        """Update the active profile"""
+        self.active_profile = profile_number
+        self._update_profiles_display()
+        
+    def _update_profiles_display(self):
+        """Update the profiles label to show all profiles with active one highlighted"""
+        if not self.profiles:
+            return
+            
+        profile_parts = []
+        for num, name in sorted(self.profiles.items()):
+            if num == self.active_profile:
+                # Highlight active profile
+                profile_parts.append(f'<span style="color: #4CAF50; font-weight: bold;">{num}: {name}</span>')
+            else:
+                profile_parts.append(f'{num}: {name}')
+                
+        self.profiles_label.setText(' | '.join(profile_parts))
+        
+    def show_status(self, status_text, status_type="info"):
+        """Show a status message"""
+        if status_type == "processing":
+            self.status_label.setText(status_text)
+            self.status_label.setStyleSheet("color: #2196F3; font-size: 12px;")  # Blue for processing
+        elif status_type == "success":
+            self.status_label.setText(status_text)
+            self.status_label.setStyleSheet("color: #4CAF50; font-size: 12px;")  # Green for success
+        else:
+            self.status_label.setText(status_text)
+            self.status_label.setStyleSheet("color: white; font-size: 12px;")
 
 
 class NotificationOverlay(QtWidgets.QWidget):
