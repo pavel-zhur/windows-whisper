@@ -26,9 +26,6 @@ UI_OPACITY = float(os.getenv("UI_OPACITY", 0.9))
 OVERLAY_POSITION = "top-right"
 OVERLAY_MARGIN = 100  # pixels from corner
 
-# Auto-typing settings
-AUTO_TYPE_ENABLED = True
-
 def validate_config():
     """Validate that all required configuration is available"""
     if not OPENAI_API_KEY:

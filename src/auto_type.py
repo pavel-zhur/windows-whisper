@@ -106,13 +106,6 @@ class AutoTyper(QtCore.QObject):
             
         except Exception as e:
             logger.error(f"Error during auto-typing setup: {e}")
-            # Final fallback - just copy to clipboard
-            try:
-                pyperclip.copy(text)
-                logger.warning("Auto-typing failed, text copied to clipboard for manual paste")
-            except Exception as clipboard_error:
-                logger.error(f"Even clipboard copy failed: {clipboard_error}")
-            
             self.typing_finished.emit(False)
     
     def _on_typing_finished(self, success):

@@ -13,16 +13,15 @@ from config import (
     OPENAI_API_KEY, API_ENDPOINT, SAMPLE_RATE,
     MAX_RECORDING_SECONDS, get_temp_audio_path,
     validate_config, APP_NAME, APP_VERSION,
-    AUTO_TYPE_ENABLED, OVERLAY_POSITION, OVERLAY_MARGIN
+    OVERLAY_POSITION, OVERLAY_MARGIN
 )
 from src.audio import AudioRecorder
 from src.profile_manager import ProfileManager
 from src.profile_switching_hotkey import ProfileSwitchingHotkey
 from src.whisper_api import WhisperAPI
 from src.translation import TextTransformationService
-from src.clipboard import copy_to_clipboard
 from src.auto_type import AutoTyper
-from src.ui.overlay import RecordingOverlay, show_notification
+from src.ui.overlay import RecordingOverlay
 from src.utils import setup_logging, clean_temp_files
 
 # Set up logging
@@ -104,15 +103,6 @@ class WhisperApp(QtCore.QObject):
         """Handle profile switching"""
         profile_name = self.profile_manager.get_profile_name(profile_number)
         logger.info(f"Switched to Profile {profile_number}: {profile_name}")
-        
-        # Update tray notification
-        if hasattr(self, 'tray_icon'):
-            self.tray_icon.showMessage(
-                f"{APP_NAME}", 
-                f"Profile {profile_number}: {profile_name}",
-                QtWidgets.QSystemTrayIcon.Information, 
-                2000
-            )
     
     def on_recording_mode_start(self, profile_number):
         """Handle start of recording mode (Ctrl+Shift held)"""
@@ -138,10 +128,8 @@ class WhisperApp(QtCore.QObject):
         """Handle completion of auto-typing"""
         if success:
             logger.info("Auto-typing completed successfully")
-            show_notification("Text typed successfully", icon_type="success")
         else:
             logger.warning("Auto-typing failed")
-            show_notification("Auto-typing failed", icon_type="warning")
             
     @QtCore.pyqtSlot(int)
     def _start_recording_with_profile_slot(self, profile_number):
@@ -299,6 +287,9 @@ class WhisperApp(QtCore.QObject):
         
         
         if success:
+            # Log the original transcribed text
+            logger.info(f"Transcribed: {text_or_error}")
+            
             # Transform the text if transformation is configured for this profile
             transformation_config = current_profile.get('transformation', {})
             if transformation_config and transformation_config.get('prompt'):
@@ -311,34 +302,27 @@ class WhisperApp(QtCore.QObject):
                 
                 if transform_success:
                     final_text = transformed_text
+                    logger.info(f"Transformed: {transformed_text}")
                 else:
                     logger.error(f"Text transformation failed: {transformed_text}")
-                    final_text = text_or_error  # Fall back to original text
+                    return  # Stop processing if transformation fails
             else:
                 final_text = text_or_error
             
-            if AUTO_TYPE_ENABLED:
-                # Auto-type the result
-                try:
-                    logger.info("Auto-typing enabled, preparing to type text...")
-                    
-                    # Hide the overlay before auto-typing
-                    if self.recording_overlay:
-                        self.recording_overlay.hide()
-                    
-                    # Start auto-typing directly
-                    logger.info(f"Starting auto-type for: {final_text[:30]}...")
-                    self.auto_typer.type_text_fast(final_text)
-                    
-                except Exception as e:
-                    logger.error(f"Auto-typing error: {e}")
-                    # Fallback to clipboard
-                    copy_to_clipboard(final_text)
-                    show_notification("Auto-typing failed, copied to clipboard", icon_type="warning")
-            else:
-                # Copy to clipboard
-                if copy_to_clipboard(final_text):
-                    show_notification("Transcription copied to clipboard", icon_type="success")
+            # Auto-type the result
+            try:
+                logger.info("Preparing to type text...")
+                
+                # Hide the overlay before auto-typing
+                if self.recording_overlay:
+                    self.recording_overlay.hide()
+                
+                # Start auto-typing directly
+                logger.info(f"Starting auto-type for: {final_text[:30]}...")
+                self.auto_typer.type_text_fast(final_text)
+                
+            except Exception as e:
+                logger.error(f"Auto-typing error: {e}")
         else:
             # Log error
             logger.error(f"Transcription error: {text_or_error}")

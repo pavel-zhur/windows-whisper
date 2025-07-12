@@ -45,13 +45,17 @@ class ProfileSwitchingHotkey:
         self.monitored_symbols = {k for k, v in self.key_to_profile.items() if v in self.supported_profiles}
     
     def _load_profile(self):
+        if not os.path.exists(self.profile_file):
+            # File doesn't exist - new installation, use default
+            return 1
+        
+        # File exists, try to read it
         try:
-            if os.path.exists(self.profile_file):
-                with open(self.profile_file, 'r') as f:
-                    return int(f.read().strip())
+            with open(self.profile_file, 'r') as f:
+                return int(f.read().strip())
         except Exception as e:
-            logger.warning(f"Failed to load profile from file: {e}")
-        return 1  # Default to profile 1
+            logger.error(f"Failed to load profile from existing file: {e}")
+            raise  # Fail if we can't read an existing file
     
     def _save_profile(self):
         try:

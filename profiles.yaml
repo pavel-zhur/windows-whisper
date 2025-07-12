@@ -17,7 +17,6 @@ profiles:
     description: "Remove offensive language, make polite and professional"
     whisper:
       model: "whisper-1"
-      language: "en"
       prompt: "Add proper punctuation and capitalization. Use professional formatting."
     transformation:
       model: "gpt-3.5-turbo"
@@ -49,7 +48,7 @@ profiles:
     description: "Convert to formal meeting notes format"
     whisper:
       model: "whisper-1"
-      language: "en"
+      # language: "en"
       prompt: "Add proper punctuation. Include speaker identification if multiple voices."
     transformation:
       model: "gpt-3.5-turbo"

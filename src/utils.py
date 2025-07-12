@@ -5,6 +5,26 @@ import tempfile
 import time
 from datetime import datetime
 
+class ColoredConsoleFormatter(logging.Formatter):
+    """Custom formatter that colors specific messages"""
+    
+    GRAY = '\033[90m'
+    WHITE = '\033[97m'
+    RESET = '\033[0m'
+    
+    def format(self, record):
+        # Format the message using parent formatter
+        formatted = super().format(record)
+        
+        # Check if this is a transcription or transformation message
+        msg = record.getMessage()
+        if any(keyword in msg for keyword in ['Transcribed:', 'Transformed:', 'Starting auto-type for:']):
+            # White for transcribed/transformed content
+            return f"{self.WHITE}{formatted}{self.RESET}"
+        else:
+            # Gray for everything else
+            return f"{self.GRAY}{formatted}{self.RESET}"
+
 def setup_logging(log_level=logging.DEBUG):
     """
     Set up logging configuration
@@ -18,19 +38,20 @@ def setup_logging(log_level=logging.DEBUG):
     logger = logging.getLogger("whisper_app")
     logger.setLevel(log_level)
     
-    # Create formatter
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    # Create formatters
+    plain_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    colored_formatter = ColoredConsoleFormatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     
-    # Create console handler
+    # Create console handler with colored formatter
     console_handler = logging.StreamHandler()
     console_handler.setLevel(log_level)
-    console_handler.setFormatter(formatter)
+    console_handler.setFormatter(colored_formatter)
     
-    # Create file handler in temp directory
+    # Create file handler with plain formatter
     log_file = os.path.join(tempfile.gettempdir(), "whisper_app.log")
     file_handler = logging.FileHandler(log_file)
     file_handler.setLevel(log_level)
-    file_handler.setFormatter(formatter)
+    file_handler.setFormatter(plain_formatter)
     
     # Add handlers
     logger.addHandler(console_handler)
