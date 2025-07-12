@@ -3,34 +3,34 @@ import json
 import os
 import logging
 import time
-from config import WHISPER_LANGUAGE, WHISPER_PROMPT
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("whisper_app")
 
 class WhisperAPI:
     """
     Client for interacting with OpenAI's Whisper API
     """
-    def __init__(self, api_key, api_endpoint, model="whisper-1"):
+    def __init__(self, api_key, api_endpoint):
         """
         Initialize the Whisper API client
         
         Args:
             api_key (str): OpenAI API key
             api_endpoint (str): Whisper API endpoint URL
-            model (str): Whisper model to use (default: whisper-1)
         """
         self.api_key = api_key
         self.api_endpoint = api_endpoint
-        self.model = "whisper-1"  # Enforcing whisper-1 as it's the only available API model
-        logger.debug(f"WhisperAPI initialized with endpoint: {api_endpoint}, model: {self.model}")
+        logger.debug(f"WhisperAPI initialized with endpoint: {api_endpoint}")
         
-    def transcribe(self, audio_file_path):
+    def transcribe(self, audio_file_path, model="whisper-1", language=None, prompt=None):
         """
         Transcribe audio using Whisper API
         
         Args:
             audio_file_path (str): Path to the audio file to transcribe
+            model (str): Model to use (default: whisper-1)
+            language (str, optional): Language for transcription
+            prompt (str, optional): Prompt for transcription
             
         Returns:
             tuple: (success, text or error message)
@@ -41,7 +41,6 @@ class WhisperAPI:
             return False, error_msg
             
         try:
-            # Log file details
             file_size = os.path.getsize(audio_file_path)
             logger.debug(f"Processing audio file: {audio_file_path} (size: {file_size/1024:.1f} KB)")
             
@@ -55,13 +54,19 @@ class WhisperAPI:
                 }
                 
                 data = {
-                    "model": self.model,
-                    "response_format": "json",
-                    "language": WHISPER_LANGUAGE,
-                    "prompt": WHISPER_PROMPT
+                    "model": model,
+                    "response_format": "json"
                 }
                 
-                logger.info(f"Sending request to Whisper API with model: {self.model}, language: {WHISPER_LANGUAGE}")
+                if language:
+                    data["language"] = language
+                    logger.debug(f"Using language: {language}")
+                
+                if prompt:
+                    data["prompt"] = prompt
+                    logger.debug(f"Using prompt: {prompt}")
+                
+                logger.info(f"Sending request to Whisper API with model: {model}")
                 start_time = time.time()
                 
                 response = requests.post(
@@ -72,13 +77,12 @@ class WhisperAPI:
                 )
                 
                 elapsed_time = time.time() - start_time
-                logger.debug(f"API request completed in {elapsed_time:.2f} seconds with status code: {response.status_code}")
+                logger.debug(f"API request completed in {elapsed_time:.2f} seconds")
                 
                 if response.status_code == 200:
                     result = response.json()
                     transcription = result.get("text", "").strip()
                     logger.info(f"Transcription successful: {len(transcription)} chars")
-                    logger.debug(f"First 100 chars of transcription: {transcription[:100]}...")
                     return True, transcription
                 else:
                     error_msg = f"API Error: {response.status_code} - {response.text}"

@@ -36,12 +36,10 @@ class AudioRecorder:
         # Initialize PyAudio immediately
         try:
             self.pyaudio = pyaudio.PyAudio()
-            logger.debug("PyAudio initialized during AudioRecorder creation")
         except Exception as e:
             logger.error(f"Failed to initialize PyAudio: {e}")
             self.pyaudio = None
             
-        logger.debug(f"AudioRecorder initialized with sample_rate={sample_rate}, channels={channels}, chunk={chunk}")
         
     def pre_initialize(self):
         """
@@ -50,7 +48,6 @@ class AudioRecorder:
         # If PyAudio is not yet initialized, initialize it
         if self.pyaudio is None:
             try:
-                logger.debug("Pre-initializing PyAudio")
                 self.pyaudio = pyaudio.PyAudio()
             except Exception as e:
                 logger.error(f"Failed to pre-initialize PyAudio: {e}")
@@ -58,7 +55,6 @@ class AudioRecorder:
         
         # Open and close a test stream to "warm up" the audio system
         try:
-            logger.debug("Opening test audio stream")
             test_stream = self.pyaudio.open(
                 format=pyaudio.paInt16,
                 channels=self.channels,
@@ -71,7 +67,6 @@ class AudioRecorder:
             # Close test stream
             test_stream.stop_stream()
             test_stream.close()
-            logger.debug("Test audio stream closed - audio system ready")
             return True
         except Exception as e:
             logger.error(f"Failed to pre-initialize audio stream: {e}")
@@ -103,7 +98,6 @@ class AudioRecorder:
         # Ensure PyAudio is initialized
         if self.pyaudio is None:
             try:
-                logger.debug("Initializing PyAudio during recording start")
                 self.pyaudio = pyaudio.PyAudio()
             except Exception as e:
                 logger.error(f"Failed to initialize audio: {e}")
@@ -112,7 +106,6 @@ class AudioRecorder:
                 
         # Open audio stream with minimal overhead
         try:
-            logger.debug("Opening audio stream for immediate recording")
             self.stream = self.pyaudio.open(
                 format=pyaudio.paInt16,
                 channels=self.channels,
@@ -123,11 +116,9 @@ class AudioRecorder:
             
             # Start callback immediately without any delay
             if callback_fn:
-                logger.debug("Calling recording callback function immediately")
                 callback_fn()
             
             # Start recording thread with no delay
-            logger.debug("Starting recording thread immediately")
             self.recording_thread = threading.Thread(
                 target=self._record,
                 args=(None,)  # No callback here - already called
@@ -158,7 +149,6 @@ class AudioRecorder:
             try:
                 initial_data = self.stream.read(self.chunk, exception_on_overflow=False)
                 self.frames.append(initial_data)
-                logger.debug("Successfully read first audio chunk")
             except Exception as e:
                 logger.error(f"Failed to read initial audio data: {e}")
                 self.is_recording = False
@@ -181,8 +171,6 @@ class AudioRecorder:
                         level = self._calculate_audio_level(data)
                         self.level_callback(level)
                     
-                    if frame_count % 100 == 0:  # Log every 100 frames
-                        logger.debug(f"Recording in progress: {current_time:.1f} seconds, {frame_count} frames captured")
                 except Exception as e:
                     logger.error(f"Error reading audio data: {e}")
                     break
@@ -191,7 +179,6 @@ class AudioRecorder:
             logger.error(f"Error in recording thread: {e}")
         finally:
             self.is_recording = False
-            logger.debug(f"Recording stopped. Total frames: {len(self.frames)}, Duration: {time.time() - start_time:.1f} seconds")
             
     def stop_recording(self):
         """
@@ -212,7 +199,6 @@ class AudioRecorder:
                 if self.stream and self.is_recording:
                     data = self.stream.read(self.chunk, exception_on_overflow=False)
                     self.frames.append(data)
-                    logger.debug("Successfully captured one frame of audio data")
             except Exception as e:
                 logger.error(f"Failed to read additional audio data: {e}")
             
@@ -229,7 +215,6 @@ class AudioRecorder:
                 logger.error(f"Error closing audio stream: {e}")
                 
         # Log the number of frames collected
-        logger.debug(f"Recording stopped with {len(self.frames)} frames collected")
         logger.info("Recording stopped")
         return True
         
@@ -278,21 +263,18 @@ class AudioRecorder:
             rms = np.sqrt(np.mean(np.square(audio_data.astype(np.float32))))
             
             # Set noise floor and normalization values
-            noise_floor = 500  # Adjust for typical indoor ambient noise
-            max_level = 15000  # Typical maximum for normal speech
+            noise_floor = 100  # Much lower noise floor for better sensitivity
+            max_level = 8000   # Lower max for typical speech levels
             
             # Apply noise gate
             if rms < noise_floor:
                 return 0.0
                 
-            # Normalize with adjusted range and log scaling
+            # Normalize linearly (no log here - we'll do compression in the UI)
             normalized = (rms - noise_floor) / (max_level - noise_floor)
             normalized = max(0.0, min(normalized, 1.0))
             
-            # Apply log scaling for better dynamics
-            level = np.log10(normalized * 9 + 1) / np.log10(10)
-            
-            return level
+            return normalized
             
         except Exception as e:
             logger.error(f"Error calculating audio level: {e}")

@@ -1,14 +1,18 @@
 # Windows Whisper
 
-A Windows desktop application that provides instant voice-to-text transcription using OpenAI's Whisper API.
+A Windows desktop application that provides instant voice-to-text transcription using OpenAI's Whisper API with intelligent text transformation profiles.
 
 ## Features
-- 🎤 One-click voice recording with `Ctrl + Space` hotkey
-- 📝 Real-time waveform visualization
-- ⚡ Instant transcription
-- 📋 Automatic clipboard copy
-- 🔑 Global hotkey support
-- 🎨 Modern, minimalist UI
+- 🎤 Voice recording with **Ctrl+Shift** hotkey system
+- 📝 Real-time waveform visualization with smooth animations
+- ⚡ Instant transcription using OpenAI Whisper API
+- 🔄 **5 transformation profiles** for different use cases
+- 🌍 Translation support (Spanish, French)
+- 💼 Professional text formatting and politeness filters
+- 📋 Automatic text typing via clipboard
+- 🔑 Profile switching with **Ctrl+Shift+[1-5]** hotkeys
+- 🎨 Modern, non-intrusive overlay UI
+- 📊 System tray integration with profile indicators
 
 ## Quick Start Guide
 
@@ -52,23 +56,36 @@ A Windows desktop application that provides instant voice-to-text transcription 
    python main.py
    ```
 
-### 3. Using the Application
+### 3. Profile Configuration
 
-1. **Start Recording**
-   - Press `Ctrl + Space` from anywhere
-   - Or click the system tray icon and select "Start Recording"
+The app includes 5 preconfigured transformation profiles:
+
+1. **Profile 1**: No Transformation (raw Whisper output)
+2. **Profile 2**: Polite & Professional (removes offensive language, makes text polite)
+3. **Profile 3**: Translate to Spanish (with formal tone)
+4. **Profile 4**: Translate to French (with formal tone)
+5. **Profile 5**: Meeting Notes Style (converts to formal bullet points)
+
+Profiles are configured in `profiles.yaml` and can be customized.
+
+### 4. Using the Application
+
+1. **Profile Selection & Recording**
+   - Hold **Ctrl+Shift** and press **1-5** to select and start recording with that profile
+   - Release **Ctrl+Shift** to stop recording
+   - The system tray icon shows the current active profile number
 
 2. **During Recording**
-   - Speak clearly into your microphone
+   - A sleek overlay appears in the top-right corner
    - Watch the real-time waveform visualization
-   - Press Space or click "Done" when finished
-   - Click "×" or press Escape to cancel
+   - See the active profile highlighted in the overlay
+   - Click "×" to cancel recording
 
-3. **After Recording**
-   - The text will be automatically transcribed
-   - Transcribed text is copied to your clipboard
-   - Click "Record Again" for another recording
-   - Or close the window to finish
+3. **Processing & Results**
+   - Text is automatically transcribed using Whisper API
+   - Applied transformation based on selected profile
+   - Final text is automatically typed where your cursor is
+   - Processing status shown in overlay (Transcribing → Transforming → Complete)
 
 ## Troubleshooting
 
@@ -84,11 +101,11 @@ A Windows desktop application that provides instant voice-to-text transcription 
    - Ensure no other application is using the microphone
    - Try restarting the application
 
-3. **Transcription Language Issues**
-   - By default, the app uses English ("en") for transcription
-   - If you're getting transcriptions in the wrong language, add `WHISPER_LANGUAGE=en` to your `.env` file
-   - For other languages, use the appropriate language code (e.g., "fr" for French, "de" for German)
-   - If translations occur regardless of setting, try adding a more specific prompt in your `.env` file: `WHISPER_PROMPT="Transcribe exactly as spoken. Do not translate."`
+3. **Profile/Hotkey Issues**
+   - Profiles are switched with **Ctrl+Shift+[1-5]**, not individual keys
+   - Make sure no other applications are using the same hotkey combinations
+   - Check the system tray icon to see the current active profile
+   - If hotkeys don't work, try running as administrator
 
 4. **Application Won't Start**
    - Verify all dependencies are installed
@@ -105,12 +122,18 @@ A Windows desktop application that provides instant voice-to-text transcription 
 
 ### Customizing Settings
 
-Edit `config.py` or add to your `.env` file to modify:
-- Default hotkey combination (`SHORTCUT_KEY`)
+Add to your `.env` file to modify:
 - Audio recording parameters (`SAMPLE_RATE`, `MAX_RECORDING_SECONDS`)
-- Language settings (`WHISPER_LANGUAGE`)
-- UI appearance settings (`UI_THEME`, `UI_OPACITY`)
-- Temporary file locations
+- UI appearance settings (`UI_THEME`, `UI_OPACITY`, `OVERLAY_POSITION`, `OVERLAY_MARGIN`)
+
+### Profile Customization
+
+Edit `profiles.yaml` to:
+- Modify existing transformation prompts
+- Add new profiles (up to 5 supported)
+- Change Whisper model settings
+- Configure language-specific transcription
+- Set up custom ChatGPT transformation prompts
 
 ### System Requirements
 

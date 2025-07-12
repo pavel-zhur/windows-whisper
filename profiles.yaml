@@ -1,0 +1,90 @@
+# Whisper App Transformation Profiles
+# Each profile can be triggered with Ctrl+[number]
+# Only specified profiles are active - remove or comment out profiles you don't want
+
+profiles:
+  1:
+    name: "No Transformation"
+    description: "Raw Whisper output with no changes"
+    whisper:
+      model: "whisper-1"
+      # language: "en"  # Optional: auto-detect if not specified
+      # prompt: "Add proper punctuation."  # Optional: formatting hints
+    # No transformation settings = raw output
+    
+  2:
+    name: "Polite & Professional"
+    description: "Remove offensive language, make polite and professional"
+    whisper:
+      model: "whisper-1"
+      prompt: "Add proper punctuation and capitalization. Use professional formatting."
+    transformation:
+      model: "gpt-3.5-turbo"
+      prompt: "Transform this text to be very polite and emotionally neutral. Replace any offensive or crude language with respectful alternatives while maintaining the core meaning. Be professional in tone. Be nice and friendly, let people feel good about themselves. Remove confrontational language and replace it with neutral or diplomatic phrasing. Keep the same language as the original."
+    
+  3:
+    name: "Translate to Spanish"
+    description: "Translate to Spanish with polite tone"
+    whisper:
+      model: "whisper-1"
+      # Auto-detect source language for translation
+      prompt: "Add proper punctuation and capitalization."
+    transformation:
+      model: "gpt-4"
+      prompt: "Translate this text to Spanish. Use formal, polite language. Ensure proper grammar and natural flow. If the text contains offensive language, translate the intent but use respectful alternatives."
+    
+  4:
+    name: "Translate to French"
+    description: "Translate to French with formal tone"
+    whisper:
+      model: "whisper-1"
+      prompt: "Add proper punctuation and capitalization."
+    transformation:
+      model: "gpt-3.5-turbo"
+      prompt: "Translate this text to French. Use formal language (vous form). Ensure proper grammar and natural flow. Maintain a professional and respectful tone."
+    
+  5:
+    name: "Meeting Notes Style"
+    description: "Convert to formal meeting notes format"
+    whisper:
+      model: "whisper-1"
+      # language: "en"
+      prompt: "Add proper punctuation. Include speaker identification if multiple voices."
+    transformation:
+      model: "gpt-3.5-turbo"
+      prompt: "Convert this spoken text into formal meeting notes format. Use bullet points, proper grammar, and professional language. Remove filler words and organize the content clearly."
+
+# Examples of other profiles you could add:
+#
+#  6:
+#    name: "Email Draft"
+#    description: "Convert to professional email format"
+#    whisper:
+#      model: "whisper-1"
+#      language: "en"
+#      prompt: "Add proper punctuation and capitalization."
+#    transformation:
+#      model: "gpt-4"
+#      prompt: "Convert this spoken text into a professional email. Add appropriate greeting and closing. Use formal business language. Structure it properly with clear paragraphs."
+#
+#  7:
+#    name: "Russian to English"
+#    description: "Transcribe Russian and translate to English"
+#    whisper:
+#      model: "whisper-1"
+#      language: "ru"
+#      prompt: "Add proper punctuation and capitalization."
+#    transformation:
+#      model: "gpt-3.5-turbo"
+#      prompt: "Translate this Russian text to English. Use natural, fluent English while maintaining the original meaning."
+#
+#  8:
+#    name: "Technical Documentation"
+#    description: "Convert to technical documentation format"
+#    whisper:
+#      model: "whisper-1"
+#      language: "en"
+#      prompt: "Include technical terms and proper capitalization."
+#    transformation:
+#      model: "gpt-4"
+#      prompt: "Convert this to technical documentation format. Use clear, precise language. Add proper formatting and structure for technical content."
