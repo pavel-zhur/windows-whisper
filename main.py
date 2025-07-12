@@ -199,10 +199,10 @@ class WhisperApp(QtCore.QObject):
             # Reset the overlay for a new recording
             self.recording_overlay.reset_for_recording()
             
-            # Show and activate
+            # Show overlay
             self.recording_overlay.show()
             self.recording_overlay.raise_()
-            self.recording_overlay.activateWindow()
+            # Don't call activateWindow() since we have WindowDoesNotAcceptFocus flag set
             
             logger.debug("Overlay shown, starting audio recording")
             # Start actual recording after UI is ready
