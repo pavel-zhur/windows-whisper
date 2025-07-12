@@ -81,9 +81,8 @@ class WaveformWidget(QtWidgets.QWidget):
         self.last_levels = []
         self.max_levels = 3  # Reduced for more responsive visualization
         
-        # Auto-scaling parameters
-        self.max_seen_level = 0.1  # Start with low max
-        self.level_decay = 0.99   # Slowly decay the max level
+        # Smart normalization: track historical max for silence detection
+        self.historical_max = 0.0
         
         # Animation states
         self.animation_mode = "recording"  # recording, transcribing, transforming
@@ -93,6 +92,12 @@ class WaveformWidget(QtWidgets.QWidget):
         """Start the waveform animation"""
         self.recording = True
         self.animation_mode = "recording"
+        self.pulse_phase = 0.0  # Reset animation phase
+        self.waveform_data = [0.0] * 75  # Clear old waveform data
+        self.target_waveform = [0.0] * 75  # Clear target data
+        # Clear averaging buffer and reset historical max for fresh start
+        self.last_levels = []
+        self.historical_max = 0.0
         self.update()
         
     def stop_recording(self):
@@ -131,14 +136,14 @@ class WaveformWidget(QtWidgets.QWidget):
                 
         elif self.animation_mode == "transcribing":
             # Pulsing dots animation
-            self.pulse_phase += 0.1
+            self.pulse_phase += 0.05  # 2x slower than original (was 0.1)
             if self.pulse_phase > 2 * np.pi:
                 self.pulse_phase -= 2 * np.pi
             self.update()
             
         elif self.animation_mode == "transforming":
             # Wave animation
-            self.pulse_phase += 0.15
+            self.pulse_phase += 0.025  # 6x slower than original (was 0.15, then 0.075, now 0.025)
             if self.pulse_phase > 2 * np.pi:
                 self.pulse_phase -= 2 * np.pi
             self.update()
@@ -148,14 +153,6 @@ class WaveformWidget(QtWidgets.QWidget):
         if not self.recording:
             return
             
-        # Update max seen level (with decay)
-        self.max_seen_level *= self.level_decay
-        if level > self.max_seen_level:
-            self.max_seen_level = level
-            
-        # Ensure minimum max level
-        self.max_seen_level = max(self.max_seen_level, 0.05)
-        
         # Add to averaging buffer
         self.last_levels.append(level)
         if len(self.last_levels) > self.max_levels:
@@ -165,19 +162,12 @@ class WaveformWidget(QtWidgets.QWidget):
         weights = [0.5, 0.3, 0.2][:len(self.last_levels)]
         smoothed_level = sum(l * w for l, w in zip(reversed(self.last_levels), weights)) / sum(weights)
         
-        # Auto-scale to always use full display range
-        # This ensures even quiet sounds are visible
-        if self.max_seen_level > 0:
-            normalized = smoothed_level / self.max_seen_level
-            # Apply gentle compression to prevent clipping
-            if normalized > 0.8:
-                normalized = 0.8 + (normalized - 0.8) * 0.5
-            normalized = min(normalized, 1.0)
-        else:
-            normalized = 0.0
+        # Update historical max for smart normalization
+        if smoothed_level > self.historical_max:
+            self.historical_max = smoothed_level
         
-        # Shift existing target data left and add new normalized level
-        self.target_waveform = self.target_waveform[1:] + [normalized]
+        # Shift existing target data left 4x faster and add new smoothed level
+        self.target_waveform = self.target_waveform[4:] + [smoothed_level, smoothed_level, smoothed_level, smoothed_level]
         
     def paintEvent(self, event):
         """Draw the waveform"""
@@ -201,6 +191,15 @@ class WaveformWidget(QtWidgets.QWidget):
             # Draw flowing wave for transforming
             self._draw_transforming_animation(painter, width, height)
         elif self.recording or any(self.waveform_data):
+            # Smart normalization: if current sounds are 10x quieter than historical max, show as silence
+            current_max = max(self.waveform_data) if any(self.waveform_data) else 1.0
+            if current_max == 0:
+                current_max = 1.0
+                
+            # If we had loud sounds before and current is 10x quieter, treat as silence
+            if self.historical_max > 0 and current_max < (self.historical_max / 10.0):
+                current_max = self.historical_max  # This will make current sounds very small
+            
             path = QtGui.QPainterPath()
             path.moveTo(0, center_y)
             
@@ -209,8 +208,9 @@ class WaveformWidget(QtWidgets.QWidget):
             # Draw top half of waveform with smoother curve and increased amplitude
             points = []
             for i, value in enumerate(self.waveform_data):
+                normalized_value = value / current_max  # Normalize for display
                 x = i * point_width
-                y = center_y - (value * center_y * 0.98)  # Increased amplitude to 98%
+                y = center_y - (normalized_value * center_y * 0.49)  # 50% height (was 0.98)
                 points.append((x, y))
                 
             # Create smooth curve through points
@@ -225,8 +225,9 @@ class WaveformWidget(QtWidgets.QWidget):
             # Draw bottom half (mirror) with smooth curve
             points = []
             for i in range(len(self.waveform_data) - 1, -1, -1):
+                normalized_value = self.waveform_data[i] / current_max  # Normalize for display
                 x = i * point_width
-                y = center_y + (self.waveform_data[i] * center_y * 0.98)  # Increased amplitude to 98%
+                y = center_y + (normalized_value * center_y * 0.49)  # 50% height (was 0.98)
                 points.append((x, y))
                 
             if len(points) > 1:
@@ -293,7 +294,7 @@ class WaveformWidget(QtWidgets.QWidget):
         for i in range(points + 1):
             x = i * width / points
             phase = (x / width) * 4 * np.pi - self.pulse_phase * 2
-            y = height / 2 + np.sin(phase) * height * 0.2  # Reduced amplitude from 0.3
+            y = height / 2 + np.sin(phase) * height * 0.067  # 3x smaller: was 0.2, now 0.067
             
             if i == 0:
                 path.moveTo(x, y)
@@ -591,9 +592,12 @@ class RecordingOverlay(QtWidgets.QWidget):
         if self.waveform.recording:
             self.waveform.stop_recording()
         
-        # Reset waveform animation state
-        self.waveform.set_mode("recording")
+        # Reset waveform animation state completely
+        self.waveform.animation_mode = "recording"
         self.waveform.pulse_phase = 0.0
+        self.waveform.waveform_data = [0.0] * 75
+        self.waveform.target_waveform = [0.0] * 75
+        self.waveform.recording = False  # Will be set to True when start_recording is called
         self.waveform.update()
         
     def start_new_recording(self):
@@ -735,6 +739,25 @@ class RecordingOverlay(QtWidgets.QWidget):
                 OverlayConstants.STATUS_FONT_SIZE,
                 OverlayConstants.COLOR_WHITE
             ))
+    
+    def hide(self):
+        """Override hide to clear animation state before hiding"""
+        # Clear status label text and timer
+        self.status_label.setText("Recording")
+        self.status_label.setStyleSheet(OverlayConstants.get_font_style(
+            OverlayConstants.STATUS_FONT_SIZE,
+            OverlayConstants.COLOR_WHITE
+        ))
+        self.timer_label.setText("00:00")
+        # Clear animation state WHILE still visible so it renders clean frame
+        self.waveform.animation_mode = "recording"
+        self.waveform.pulse_phase = 0.0
+        self.waveform.waveform_data = [0.0] * 75
+        self.waveform.target_waveform = [0.0] * 75
+        self.waveform.recording = False
+        self.waveform.update()  # Paint clean frame while still visible
+        QtWidgets.QApplication.processEvents()  # Force paint to happen now
+        super().hide()
 
 
 class NotificationOverlay(QtWidgets.QWidget):
