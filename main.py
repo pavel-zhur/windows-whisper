@@ -22,6 +22,9 @@ from src.whisper_api import WhisperAPI
 from src.translation import TextTransformationService
 from src.auto_type import AutoTyper
 from src.ui.overlay import RecordingOverlay
+from src.ui.token_overlay import ApiTokenOverlay
+from src.ui.yaml_error_overlay import YamlErrorOverlay
+from src.config_manager import ConfigManager
 from src.utils import setup_logging, clean_temp_files
 
 # Set up logging
@@ -55,8 +58,12 @@ class ProcessingWorker(QtCore.QThread):
                 return
                 
             # Get profile configuration
-            current_profile = self.profile_manager.get_profile(self.current_profile_number)
-            whisper_config = current_profile.get('whisper', {})
+            if self.profile_manager:
+                current_profile = self.profile_manager.get_profile(self.current_profile_number)
+                whisper_config = current_profile.get('whisper', {})
+            else:
+                # Use default configuration if no profile manager
+                whisper_config = {}
             
             # Transcribe
             self.status_update.emit("Transcribing...", "processing")
@@ -79,7 +86,11 @@ class ProcessingWorker(QtCore.QThread):
             self.transcription_complete.emit(text_or_error)
             
             # Transform if needed
-            transformation_config = current_profile.get('transformation', {})
+            if self.profile_manager:
+                transformation_config = current_profile.get('transformation', {})
+            else:
+                transformation_config = {}
+                
             if transformation_config and transformation_config.get('prompt'):
                 self.status_update.emit("Transforming...", "processing")
                 logger.info(f"Transforming text with Profile {self.current_profile_number}...")
@@ -113,65 +124,94 @@ class WhisperApp(QtCore.QObject):
         """Initialize the application"""
         super().__init__()
         
-        # Validate configuration
+        # Initialize with graceful API key handling
+        self.api_key_missing = False
         try:
             validate_config()
         except ValueError as e:
-            logger.error(f"Configuration error: {e}")
-            show_error_and_exit(str(e))
+            logger.warning(f"Configuration warning: {e}")
+            # Don't exit - we'll handle missing API key gracefully
+            self.api_key_missing = True
         
         # Worker thread reference
         self.processing_worker = None
         
-        # Initialize profile manager
+        # Initialize profile manager with graceful YAML error handling
+        self.yaml_error = False
         try:
             self.profile_manager = ProfileManager()
         except Exception as e:
             logger.error(f"Failed to initialize profile manager: {e}")
-            show_error_and_exit(f"Failed to load profiles: {e}")
+            self.yaml_error = True
+            self.yaml_error_message = str(e)
+            # Create a dummy profile manager to prevent crashes
+            self.profile_manager = None
             
         # Initialize components
         self.audio_recorder = AudioRecorder(sample_rate=SAMPLE_RATE)
-        self.whisper_api = WhisperAPI(api_key=OPENAI_API_KEY, api_endpoint=API_ENDPOINT)
+        # Initialize with empty API key if missing - will be set later
+        api_key = OPENAI_API_KEY if not self.api_key_missing else ""
+        self.whisper_api = WhisperAPI(api_key=api_key, api_endpoint=API_ENDPOINT)
         self.transformation_service = TextTransformationService()
         self.auto_typer = AutoTyper()
         
         # Connect auto-typer signals
         self.auto_typer.typing_finished.connect(self.on_auto_typing_finished)
         
+        # Configuration manager
+        self.config_manager = ConfigManager()
+        self.config_manager.ensure_env_file_exists()
+        
         # UI components
         self.is_recording = False
+        self.current_overlay = None  # Track which overlay is currently active
         
-        # Pre-create recording overlay to avoid Qt threading issues
+        # Pre-create overlays to avoid Qt threading issues
         self.recording_overlay = RecordingOverlay()
         self.recording_overlay.recording_done.connect(self.process_recording)
         self.recording_overlay.recording_cancelled.connect(self.cancel_recording)
         self.recording_overlay.hide()  # Start hidden
         
-        # Set profiles in overlay
-        all_profiles = self.profile_manager.get_all_profiles()
-        profile_info = {num: self.profile_manager.get_profile_name(num) for num in all_profiles}
-        self.recording_overlay.set_profiles(profile_info)
+        # Token setup overlay
+        self.token_overlay = ApiTokenOverlay()
+        self.token_overlay.token_saved.connect(self._on_token_saved)
+        self.token_overlay.cancelled.connect(self._on_token_cancelled)
+        self.token_overlay.hide()
         
-        # Set up profile switching hotkeys
-        try:
-            
-            # Get available profile numbers from profile manager
-            available_profiles = list(self.profile_manager.get_all_profiles().keys())
-            
-            # Initialize the profile switching hotkey manager
-            self.hotkey_manager = ProfileSwitchingHotkey(
-                supported_profiles=available_profiles,
-                on_profile_change=self.on_profile_switched,
-                on_start=self.on_recording_mode_start,
-                on_stop=self.on_recording_mode_stop
-            )
-            
-            self.hotkey_manager.start()
-            
-        except Exception as e:
-            logger.error(f"Failed to register profile hotkeys: {e}")
-            show_error_and_exit(f"Failed to register hotkeys: {e}")
+        # YAML error overlay
+        self.yaml_error_overlay = YamlErrorOverlay()
+        self.yaml_error_overlay.open_editor_requested.connect(self.open_profiles_editor)
+        self.yaml_error_overlay.dismissed.connect(self._on_yaml_error_dismissed)
+        self.yaml_error_overlay.hide()
+        
+        # Set profiles in overlay (if profile manager is available)
+        if self.profile_manager:
+            all_profiles = self.profile_manager.get_all_profiles()
+            profile_info = {num: self.profile_manager.get_profile_name(num) for num in all_profiles}
+            self.recording_overlay.set_profiles(profile_info)
+        
+        # Set up profile switching hotkeys (if profile manager is available)
+        if self.profile_manager:
+            try:
+                # Get available profile numbers from profile manager
+                available_profiles = list(self.profile_manager.get_all_profiles().keys())
+                
+                # Initialize the profile switching hotkey manager
+                self.hotkey_manager = ProfileSwitchingHotkey(
+                    supported_profiles=available_profiles,
+                    on_profile_change=self.on_profile_switched,
+                    on_start=self.on_recording_mode_start,
+                    on_stop=self.on_recording_mode_stop
+                )
+                
+                self.hotkey_manager.start()
+                
+            except Exception as e:
+                logger.error(f"Failed to register profile hotkeys: {e}")
+                show_error_and_exit(f"Failed to register hotkeys: {e}")
+        else:
+            # No profile manager available, use default hotkey
+            self.hotkey_manager = None
             
         # Register cleanup
         atexit.register(self.cleanup)
@@ -184,9 +224,114 @@ class WhisperApp(QtCore.QObject):
         self.create_tray_icon()
         
         logger.info(f"{APP_NAME} v{APP_VERSION} initialized successfully")
+        
+        # Show YAML error overlay if there were issues loading profiles
+        if self.yaml_error:
+            QtCore.QTimer.singleShot(1000, self._show_yaml_error)  # Delay to ensure UI is ready
+    
+    def _show_yaml_error(self):
+        """Show YAML error overlay"""
+        self.yaml_error_overlay.show_error(
+            "Your profiles.yaml configuration file contains errors and cannot be loaded.",
+            self.yaml_error_message
+        )
+        self.current_overlay = "yaml_error"
+    
+    def _hide_all_overlays(self):
+        """Hide all overlays safely"""
+        if self.recording_overlay and self.recording_overlay.isVisible():
+            self.recording_overlay.hide()
+        if self.token_overlay and self.token_overlay.isVisible():
+            self.token_overlay.hide()
+        if self.yaml_error_overlay and self.yaml_error_overlay.isVisible():
+            self.yaml_error_overlay.hide()
+        self.current_overlay = None
+    
+    def _check_api_token(self):
+        """Check if API token is available and valid"""
+        api_key = self.config_manager.get_api_key()
+        if not api_key:
+            return False, "No API token configured"
+        
+        valid, message = self.config_manager.validate_api_key_format(api_key)
+        if not valid:
+            return False, f"Invalid API token format: {message}"
+            
+        return True, "API token available"
+    
+    def show_token_setup(self):
+        """Show the token setup overlay"""
+        logger.info("Showing token setup overlay")
+        self._hide_all_overlays()
+        
+        current_token = self.config_manager.get_api_key()
+        self.token_overlay.show_overlay(current_token)
+        self.current_overlay = "token"
+        
+    def _on_token_saved(self, token):
+        """Handle token saved from overlay"""
+        logger.info("Processing saved token")
+        
+        # Validate token format
+        valid, message = self.config_manager.validate_api_key_format(token)
+        if not valid:
+            QtWidgets.QMessageBox.warning(None, "Invalid Token", f"Token validation failed: {message}")
+            return
+        
+        # Save to .env file
+        if self.config_manager.save_api_key(token):
+            # Update the WhisperAPI instance with new token
+            self.whisper_api.api_key = token
+            logger.info("API token updated successfully")
+            QtWidgets.QMessageBox.information(None, "Success", "API token saved successfully!")
+        else:
+            QtWidgets.QMessageBox.critical(None, "Error", "Failed to save API token. Please try again.")
+            
+        self.current_overlay = None
+        
+    def _on_token_cancelled(self):
+        """Handle token setup cancelled"""
+        logger.info("Token setup cancelled")
+        self.current_overlay = None
+        
+    def open_profiles_editor(self):
+        """Open profiles.yaml file in notepad"""
+        import subprocess
+        import os
+        
+        profiles_path = os.path.abspath("profiles.yaml")
+        
+        if not os.path.exists(profiles_path):
+            QtWidgets.QMessageBox.warning(
+                None, 
+                "File Not Found", 
+                f"profiles.yaml not found at:\n{profiles_path}"
+            )
+            return
+            
+        try:
+            # Use notepad.exe on Windows
+            subprocess.run(["notepad.exe", profiles_path], check=False)
+            logger.info(f"Opened profiles editor: {profiles_path}")
+        except Exception as e:
+            logger.error(f"Failed to open profiles editor: {e}")
+            QtWidgets.QMessageBox.critical(
+                None,
+                "Error",
+                f"Failed to open editor:\n{str(e)}"
+            )
+    
+    def _on_yaml_error_dismissed(self):
+        """Handle YAML error overlay dismissed"""
+        logger.info("YAML error overlay dismissed")
+        self.current_overlay = None
     
     def on_profile_switched(self, profile_number):
         """Handle profile switching"""
+        if not self.profile_manager:
+            logger.warning("Profile manager not available")
+            return
+            
         profile_name = self.profile_manager.get_profile_name(profile_number)
         logger.info(f"Switched to Profile {profile_number}: {profile_name}")
         
@@ -205,6 +350,14 @@ class WhisperApp(QtCore.QObject):
     
     def on_recording_mode_start(self, profile_number):
         """Handle start of recording mode (Ctrl+Shift held)"""
+        if not self.profile_manager:
+            logger.info("Recording mode started - using default profile")
+            QtCore.QMetaObject.invokeMethod(
+                self, "start_recording",
+                QtCore.Qt.QueuedConnection
+            )
+            return
+            
         profile_name = self.profile_manager.get_profile_name(profile_number)
         logger.info(f"Recording mode started - Profile {profile_number}: {profile_name}")
         # Schedule start_recording_with_profile to run on main thread
@@ -237,6 +390,11 @@ class WhisperApp(QtCore.QObject):
         
     def start_recording_with_profile(self, profile_number):
         """Start recording with a specific profile"""
+        if not self.profile_manager:
+            logger.warning("Profile manager not available, using default recording")
+            self.start_recording()
+            return
+            
         if not self.profile_manager.has_profile(profile_number):
             logger.warning(f"Profile {profile_number} not found, ignoring")
             return
@@ -272,6 +430,14 @@ class WhisperApp(QtCore.QObject):
         tray_menu = QtWidgets.QMenu()
         
         # Add actions
+        setup_token_action = tray_menu.addAction("Setup API Token")
+        setup_token_action.triggered.connect(self.show_token_setup)
+        
+        edit_profiles_action = tray_menu.addAction("Edit Profiles")
+        edit_profiles_action.triggered.connect(self.open_profiles_editor)
+        
+        tray_menu.addSeparator()
+        
         exit_action = tray_menu.addAction("Exit")
         exit_action.triggered.connect(self.quit)
         
@@ -361,6 +527,13 @@ class WhisperApp(QtCore.QObject):
         if self.is_recording:
             logger.debug("Recording already in progress")
             return
+        
+        # Check if API token is available
+        token_valid, token_message = self._check_api_token()
+        if not token_valid:
+            logger.warning(f"Cannot start recording: {token_message}")
+            self.show_token_setup()
+            return
             
         self.is_recording = True
         
@@ -374,9 +547,10 @@ class WhisperApp(QtCore.QObject):
             self.recording_overlay.reset_for_recording()
             
             # Update active profile in overlay
-            current_profile = self.hotkey_manager.current_profile
-            profile_name = self.profile_manager.get_profile_name(current_profile)
-            self.recording_overlay.update_active_profile(current_profile, profile_name)
+            if self.hotkey_manager and self.profile_manager:
+                current_profile = self.hotkey_manager.current_profile
+                profile_name = self.profile_manager.get_profile_name(current_profile)
+                self.recording_overlay.update_active_profile(current_profile, profile_name)
             
             # Show overlay
             self.recording_overlay.show()
@@ -454,12 +628,16 @@ class WhisperApp(QtCore.QObject):
         temp_file_path = get_temp_audio_path()
         
         # Create and start processing worker
+        current_profile = 1  # Default profile
+        if self.hotkey_manager:
+            current_profile = self.hotkey_manager.current_profile
+            
         self.processing_worker = ProcessingWorker(
             self.audio_recorder,
             self.whisper_api,
             self.transformation_service,
             self.profile_manager,
-            self.hotkey_manager.current_profile,
+            current_profile,
             temp_file_path
         )
         
@@ -513,7 +691,14 @@ class WhisperApp(QtCore.QObject):
     def _on_processing_error(self, error_message):
         """Handle processing errors"""
         logger.error(f"Processing error: {error_message}")
-        self._cleanup_overlay()
+        
+        # Check if this is an API authentication error
+        if "401" in error_message or "authentication" in error_message.lower() or "api key" in error_message.lower():
+            logger.warning("API authentication error detected, showing token setup")
+            self._cleanup_overlay()
+            self.show_token_setup()
+        else:
+            self._cleanup_overlay()
         
         # Clean up temp file
         temp_file_path = get_temp_audio_path()
