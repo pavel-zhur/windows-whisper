@@ -182,5 +182,5 @@ FunctionEnd
 
 Function .onInstSuccess
     ; Show configuration message
-    MessageBox MB_ICONINFORMATION "Installation completed successfully!$\r$\n$\r$\nPlease edit the .env file in the installation directory to configure your OpenAI API key before first use."
+    MessageBox MB_ICONINFORMATION "Installation completed successfully!$\r$\n$\r$\nUse the 'Setup API Token' option in the system tray menu to configure your OpenAI API key."
 FunctionEnd

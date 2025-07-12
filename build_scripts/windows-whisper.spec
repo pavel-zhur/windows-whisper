@@ -37,6 +37,9 @@ hiddenimports = [
     'src.profile_switching_hotkey',
     'src.translation',
     'src.ui.overlay',
+    'src.ui.token_overlay',
+    'src.ui.yaml_error_overlay',
+    'src.config_manager',
     'src.utils',
     'src.whisper_api',
 ]
