@@ -517,8 +517,8 @@ class RecordingOverlay(QtWidgets.QWidget):
         logger.debug("Emitting recording_started signal")
         self.recording_started.emit()
 
-    def start_new_recording(self):
-        """Start a new recording"""
+    def reset_for_recording(self):
+        """Reset the overlay UI for a new recording session"""
         # Reset UI state
         self.status_label.setText("Recording...")
         self.timer_label.setText("00:00")
@@ -537,6 +537,18 @@ class RecordingOverlay(QtWidgets.QWidget):
         
         # Hide Record Again button
         self.record_again_btn.hide()
+        
+        # Reset any error state from previous recording
+        self.start_time = None
+        if self.timer.isActive():
+            self.timer.stop()
+        if self.waveform.recording:
+            self.waveform.stop_recording()
+        
+    def start_new_recording(self):
+        """Start a new recording"""
+        # Reset the UI
+        self.reset_for_recording()
         
         # Reset recording timers
         self.start_time = QtCore.QTime.currentTime()

@@ -5,7 +5,7 @@ import tempfile
 import time
 from datetime import datetime
 
-def setup_logging(log_level=logging.INFO):
+def setup_logging(log_level=logging.DEBUG):
     """
     Set up logging configuration
     

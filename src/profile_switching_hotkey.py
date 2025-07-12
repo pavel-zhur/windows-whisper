@@ -2,6 +2,8 @@
 import keyboard
 import os
 import logging
+import queue
+import threading
 
 logger = logging.getLogger("whisper_app")
 
@@ -20,6 +22,11 @@ class ProfileSwitchingHotkey:
         self.on_stop = on_stop
         self.hook_active = False
         self.profile_file = "./.profile.txt"
+        
+        # Thread-safe event queue for keyboard events
+        self.event_queue = queue.Queue()
+        self.event_thread = None
+        self.running = False
         
         # Load saved profile or default to 1, ensure it's supported
         loaded_profile = self._load_profile()
@@ -54,51 +61,110 @@ class ProfileSwitchingHotkey:
             logger.warning(f"Failed to save profile to file: {e}")
     
     def _on_key_event(self, event):
-        # Monitor ctrl, shift, and only symbols for supported profiles
+        """CRITICAL: This runs in keyboard hook context - must be FAST and NEVER block!"""
+        # Only queue relevant events - minimal processing
         monitored_keys = {'ctrl', 'shift'} | self.monitored_symbols
-        if event.name not in monitored_keys:
-            return False
-            
-        if event.event_type == keyboard.KEY_DOWN:
-            # Add modifier keys to pressed set (ignore repeats)
-            if event.name in {'ctrl', 'shift'} and event.name not in self.keys_pressed:
-                self.keys_pressed.add(event.name)
-                
-                # Check if we have both ctrl and shift
-                if {'ctrl', 'shift'} <= self.keys_pressed and not self.is_combo_active:
-                    self.is_combo_active = True
-                    self.on_start(self.current_profile)
-            
-            # Handle shifted number symbols when combo is active
-            elif event.name in self.monitored_symbols:
-                if self.is_combo_active:
-                    profile_num = self.key_to_profile.get(event.name)
-                    if profile_num is not None and profile_num in self.supported_profiles:
-                        if profile_num != self.current_profile:  # Only trigger if different
-                            self.current_profile = profile_num
-                            self._save_profile()
-                            self.on_profile_change(profile_num)
-                    return True  # Suppress the key when combo is active
-                return False  # Don't suppress if combo not active
-                    
-        elif event.event_type == keyboard.KEY_UP:
-            # Remove key from pressed set
-            if event.name in self.keys_pressed:
-                self.keys_pressed.discard(event.name)
-                
-                # Check if we no longer have both keys
-                if self.is_combo_active and not ({'ctrl', 'shift'} <= self.keys_pressed):
-                    self.is_combo_active = False
-                    self.on_stop(self.current_profile)
+        if event.name in monitored_keys:
+            try:
+                # Queue event with timestamp - this is non-blocking
+                self.event_queue.put_nowait({
+                    'name': event.name,
+                    'type': event.event_type,
+                    'time': event.time
+                })
+            except queue.Full:
+                # If queue is full, just drop the event - keyboard responsiveness is priority
+                pass
         
-        return False  # Don't suppress modifier keys
+        # Only suppress number keys when combo is active
+        if (event.event_type == keyboard.KEY_DOWN and 
+            event.name in self.monitored_symbols and 
+            self.is_combo_active):
+            return True  # Suppress the key
+            
+        return False  # Don't suppress other keys
+    
+    def _process_events(self):
+        """Process keyboard events in a separate thread - can safely call callbacks here"""
+        local_keys_pressed = set()
+        local_combo_active = False
+        
+        while self.running:
+            try:
+                # Wait for events with timeout
+                event = self.event_queue.get(timeout=0.1)
+                
+                if event['type'] == keyboard.KEY_DOWN:
+                    # Add modifier keys to pressed set
+                    if event['name'] in {'ctrl', 'shift'} and event['name'] not in local_keys_pressed:
+                        local_keys_pressed.add(event['name'])
+                        
+                        # Check if we have both ctrl and shift
+                        if {'ctrl', 'shift'} <= local_keys_pressed and not local_combo_active:
+                            local_combo_active = True
+                            self.is_combo_active = True  # Update shared state for suppression
+                            try:
+                                self.on_start(self.current_profile)
+                            except Exception as e:
+                                logger.error(f"Error in on_start callback: {e}")
+                    
+                    # Handle shifted number symbols when combo is active
+                    elif event['name'] in self.monitored_symbols and local_combo_active:
+                        profile_num = self.key_to_profile.get(event['name'])
+                        if profile_num is not None and profile_num in self.supported_profiles:
+                            if profile_num != self.current_profile:
+                                self.current_profile = profile_num
+                                self._save_profile()
+                                try:
+                                    self.on_profile_change(profile_num)
+                                except Exception as e:
+                                    logger.error(f"Error in on_profile_change callback: {e}")
+                                    
+                elif event['type'] == keyboard.KEY_UP:
+                    # Remove key from pressed set
+                    if event['name'] in local_keys_pressed:
+                        local_keys_pressed.discard(event['name'])
+                        
+                        # Check if we no longer have both keys
+                        if local_combo_active and not ({'ctrl', 'shift'} <= local_keys_pressed):
+                            local_combo_active = False
+                            self.is_combo_active = False  # Update shared state for suppression
+                            try:
+                                self.on_stop(self.current_profile)
+                            except Exception as e:
+                                logger.error(f"Error in on_stop callback: {e}")
+                                
+            except queue.Empty:
+                # No events, just continue
+                pass
+            except Exception as e:
+                logger.error(f"Error processing keyboard event: {e}")
     
     def start(self):
         if not self.hook_active:
+            # Start event processing thread
+            self.running = True
+            self.event_thread = threading.Thread(target=self._process_events, daemon=True)
+            self.event_thread.start()
+            
+            # Install keyboard hook
             keyboard.hook(self._on_key_event, suppress=False)
             self.hook_active = True
     
     def stop(self):
         if self.hook_active:
+            # Stop processing thread
+            self.running = False
+            if self.event_thread:
+                self.event_thread.join(timeout=1.0)
+            
+            # Unhook keyboard
             keyboard.unhook_all()
             self.hook_active = False
+            
+            # Clear any remaining events
+            while not self.event_queue.empty():
+                try:
+                    self.event_queue.get_nowait()
+                except:
+                    pass
