@@ -195,7 +195,7 @@ class WhisperApp(QtCore.QObject):
         
         # Don't show startup notification
         
-    def _update_tray_icon(self):
+    def _update_tray_icon(self, recording=False):
         """Update tray icon with mic symbol and current profile number"""
         from PyQt5.QtGui import QPixmap, QPainter, QFont, QColor, QBrush
         
@@ -206,8 +206,8 @@ class WhisperApp(QtCore.QObject):
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing)
         
-        # Draw mic icon (darker and larger)
-        mic_color = QColor(40, 40, 40)  # Dark gray/black mic
+        # Draw mic icon - red when recording, dark when idle
+        mic_color = QColor(220, 50, 50) if recording else QColor(40, 40, 40)
         painter.setPen(QtCore.Qt.NoPen)
         painter.setBrush(mic_color)
         
@@ -224,19 +224,19 @@ class WhisperApp(QtCore.QObject):
         profile_str = str(self.hotkey_manager.current_profile) if hasattr(self, 'hotkey_manager') else "1"
         
         # Badge background - bright color for visibility
-        badge_color = QColor(220, 50, 50)  # Red badge
+        badge_color = QColor(0, 120, 215)  # Blue badge (Windows accent blue)
         painter.setBrush(badge_color)
         painter.setPen(QtCore.Qt.NoPen)
         
-        # Badge circle in top-right
-        badge_size = 14
-        badge_x = 32 - badge_size - 2
-        badge_y = 2
+        # Bigger badge
+        badge_size = 18
+        badge_x = 32 - badge_size - 1
+        badge_y = 1
         painter.drawEllipse(badge_x, badge_y, badge_size, badge_size)
         
-        # Draw profile number in badge
+        # Draw profile number in badge - BIGGER font
         painter.setPen(QColor(255, 255, 255))  # White text
-        font = QFont("Arial", 9, QFont.Bold)
+        font = QFont("Arial", 12, QFont.Bold)  # Increased from 9 to 12
         painter.setFont(font)
         
         badge_rect = QtCore.QRect(badge_x, badge_y, badge_size, badge_size)
@@ -257,6 +257,10 @@ class WhisperApp(QtCore.QObject):
             return
             
         self.is_recording = True
+        
+        # Update tray icon to show recording state
+        if hasattr(self, 'tray_icon'):
+            self._update_tray_icon(recording=True)
         
         try:
             logger.debug(f"Starting recording from thread: {threading.current_thread().name}")
@@ -324,20 +328,30 @@ class WhisperApp(QtCore.QObject):
         
         self.is_recording = False
         
+        # Update tray icon to show not recording
+        if hasattr(self, 'tray_icon'):
+            self._update_tray_icon(recording=False)
+        
+        # Keep overlay visible during processing
+        # It will be hidden later when we start auto-typing
+        
         # Stop recording
         if not self.audio_recorder.stop_recording():
             logger.error("Failed to stop recording - no recording in progress")
+            self._cleanup_overlay()
             return
         
         # Check if we have any recorded audio frames
         if not hasattr(self.audio_recorder, 'frames') or not self.audio_recorder.frames:
             logger.error("No audio data was recorded")
+            self._cleanup_overlay()
             return
         
         # Save to temp file
         temp_file_path = get_temp_audio_path()
         if not self.audio_recorder.save_wav(temp_file_path):
             logger.error("Failed to save audio file")
+            self._cleanup_overlay()
             return
             
         # Get the currently active profile (from profile manager)
@@ -384,6 +398,7 @@ class WhisperApp(QtCore.QObject):
                     logger.info(f"Transformed: {transformed_text}")
                 else:
                     logger.error(f"Text transformation failed: {transformed_text}")
+                    self._cleanup_overlay()
                     return  # Stop processing if transformation fails
             else:
                 final_text = text_or_error
@@ -405,6 +420,7 @@ class WhisperApp(QtCore.QObject):
         else:
             # Log error
             logger.error(f"Transcription error: {text_or_error}")
+            self._cleanup_overlay()
                 
         # Clean up temp file
         try:
@@ -412,14 +428,15 @@ class WhisperApp(QtCore.QObject):
         except Exception as e:
             logger.warning(f"Failed to remove temporary file: {e}")
             
-        # Clean up overlay (if not already closed by auto-typing)
-        self._cleanup_overlay()
-            
     def cancel_recording(self):
         """Cancel the current recording"""
         logger.debug("Recording cancelled")
         self.is_recording = False
         self.audio_recorder.stop_recording()
+        
+        # Update tray icon to show not recording
+        if hasattr(self, 'tray_icon'):
+            self._update_tray_icon(recording=False)
         
         # Clean up temp file
         temp_file_path = get_temp_audio_path()

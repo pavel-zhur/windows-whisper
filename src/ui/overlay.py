@@ -529,6 +529,7 @@ class RecordingOverlay(QtWidgets.QWidget):
         """Reset the overlay UI for a new recording session"""
         # Reset UI state
         self.status_label.setText("Recording...")
+        self.status_label.setStyleSheet("color: white; font-size: 12px;")  # Reset to default style
         self.timer_label.setText("00:00")
         self.animation_timer.start(500)
         self.animation_state = True
