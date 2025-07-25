@@ -33,9 +33,6 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
         
-    - name: Install NSIS
-      uses: ilammy/setup-nsis@v1
-        
     - name: Build executable
       run: |
         cd build_scripts
@@ -50,9 +47,9 @@ jobs:
         Write-Host "Executable size: $([math]::Round($size, 2)) MB"
         
     - name: Create installer
-      run: |
-        cd build_scripts
-        makensis installer.nsi
+      uses: joncloud/makensis-action@v4.1
+      with:
+        script-file: build_scripts/installer.nsi
         
     - name: Verify installer
       run: |
