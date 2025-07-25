@@ -20,7 +20,7 @@ jobs:
         python-version: '3.11'
         
     - name: Cache pip dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -79,13 +79,13 @@ jobs:
         echo "VERSION=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
         
     - name: Upload executable artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: WindowsWhisper-${{ steps.version.outputs.VERSION }}-Executable
         path: dist/WindowsWhisper.exe
         
     - name: Upload installer artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: WindowsWhisper-${{ steps.version.outputs.VERSION }}-Installer
         path: build_scripts/WindowsWhisper-*-Setup.exe
