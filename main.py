@@ -17,7 +17,7 @@ from config import (
 )
 from src.audio import AudioRecorder
 from src.profile_manager import ProfileManager
-from src.profile_switching_hotkey import ProfileSwitchingHotkey
+from src.global_hotkey_manager import GlobalHotkeyManager
 from src.whisper_api import WhisperAPI
 from src.translation import TextTransformationService
 from src.auto_type import AutoTyper
@@ -135,6 +135,7 @@ class WhisperApp(QtCore.QObject):
         
         # Worker thread reference
         self.processing_worker = None
+        self.processing_cancelled = False
         
         # Initialize profile manager with graceful YAML error handling
         self.yaml_error = False
@@ -190,28 +191,14 @@ class WhisperApp(QtCore.QObject):
             profile_info = {num: self.profile_manager.get_profile_name(num) for num in all_profiles}
             self.recording_overlay.set_profiles(profile_info)
         
-        # Set up profile switching hotkeys (if profile manager is available)
-        if self.profile_manager:
-            try:
-                # Get available profile numbers from profile manager
-                available_profiles = list(self.profile_manager.get_all_profiles().keys())
-                
-                # Initialize the profile switching hotkey manager
-                self.hotkey_manager = ProfileSwitchingHotkey(
-                    supported_profiles=available_profiles,
-                    on_profile_change=self.on_profile_switched,
-                    on_start=self.on_recording_mode_start,
-                    on_stop=self.on_recording_mode_stop
-                )
-                
-                self.hotkey_manager.start()
-                
-            except Exception as e:
-                logger.error(f"Failed to register profile hotkeys: {e}")
-                show_error_and_exit(f"Failed to register hotkeys: {e}")
-        else:
-            # No profile manager available, use default hotkey
-            self.hotkey_manager = None
+        # Set up global hotkey for Ctrl+Shift
+        try:
+            self.hotkey_manager = GlobalHotkeyManager(self.show_recording_window)
+            self.hotkey_manager.start()
+            logger.info("Global hotkey manager initialized")
+        except Exception as e:
+            logger.error(f"Failed to register global hotkey: {e}")
+            show_error_and_exit(f"Failed to register hotkey: {e}")
             
         # Register cleanup
         atexit.register(self.cleanup)
@@ -326,55 +313,32 @@ class WhisperApp(QtCore.QObject):
         logger.info("YAML error overlay dismissed")
         self.current_overlay = None
     
-    def on_profile_switched(self, profile_number):
-        """Handle profile switching"""
-        if not self.profile_manager:
-            logger.warning("Profile manager not available")
-            return
-            
-        profile_name = self.profile_manager.get_profile_name(profile_number)
-        logger.info(f"Switched to Profile {profile_number}: {profile_name}")
+    def show_recording_window(self):
+        """Show the recording window when Ctrl+Shift is pressed"""
+        logger.info("Ctrl+Shift detected - showing recording window")
         
-        # Update tray icon to show new profile number
-        if hasattr(self, 'tray_icon'):
-            self._update_tray_icon()
-            
-        # Update overlay if it's visible (thread-safe)
-        if hasattr(self, 'recording_overlay') and self.recording_overlay.isVisible():
-            QtCore.QMetaObject.invokeMethod(
-                self.recording_overlay, "update_active_profile",
-                QtCore.Qt.QueuedConnection,
-                QtCore.Q_ARG(int, profile_number),
-                QtCore.Q_ARG(str, profile_name)
-            )
-    
-    def on_recording_mode_start(self, profile_number):
-        """Handle start of recording mode (Ctrl+Shift held)"""
-        if not self.profile_manager:
-            logger.info("Recording mode started - using default profile")
-            QtCore.QMetaObject.invokeMethod(
-                self, "start_recording",
-                QtCore.Qt.QueuedConnection
-            )
+        # Check if API token is available
+        token_valid, token_message = self._check_api_token()
+        if not token_valid:
+            logger.warning(f"Cannot start recording: {token_message}")
+            self.show_token_setup()
             return
             
-        profile_name = self.profile_manager.get_profile_name(profile_number)
-        logger.info(f"Recording mode started - Profile {profile_number}: {profile_name}")
-        # Schedule start_recording_with_profile to run on main thread
+        # If already recording, don't start another session
+        if self.is_recording:
+            logger.debug("Recording already in progress")
+            return
+            
+        # Start recording in focused window mode
         QtCore.QMetaObject.invokeMethod(
-            self, "_start_recording_with_profile_slot",
-            QtCore.Qt.QueuedConnection,
-            QtCore.Q_ARG(int, profile_number)
-        )
-    
-    def on_recording_mode_stop(self, profile_number):
-        """Handle end of recording mode (Ctrl+Shift released)"""
-        logger.info("Recording mode stopped")
-        # Schedule stop_recording to run on main thread
-        QtCore.QMetaObject.invokeMethod(
-            self, "stop_recording",
+            self, "_show_recording_window_impl",
             QtCore.Qt.QueuedConnection
         )
+    
+    @QtCore.pyqtSlot()
+    def _show_recording_window_impl(self):
+        """Implementation of show recording window (runs on main thread)"""
+        self.start_recording()
 
     def on_auto_typing_finished(self, success):
         """Handle completion of auto-typing"""
@@ -383,27 +347,6 @@ class WhisperApp(QtCore.QObject):
         else:
             logger.warning("Auto-typing failed")
             
-    @QtCore.pyqtSlot(int)
-    def _start_recording_with_profile_slot(self, profile_number):
-        """Qt slot for starting recording with a specific profile"""
-        self.start_recording_with_profile(profile_number)
-        
-    def start_recording_with_profile(self, profile_number):
-        """Start recording with a specific profile"""
-        if not self.profile_manager:
-            logger.warning("Profile manager not available, using default recording")
-            self.start_recording()
-            return
-            
-        if not self.profile_manager.has_profile(profile_number):
-            logger.warning(f"Profile {profile_number} not found, ignoring")
-            return
-            
-        profile_name = self.profile_manager.get_profile_name(profile_number)
-        logger.info(f"Starting recording with Profile {profile_number}: {profile_name}")
-        
-        # Start the regular recording process
-        self.start_recording()
         
     def signal_handler(self, signum, frame):
         """Handle system signals"""
@@ -493,7 +436,7 @@ class WhisperApp(QtCore.QObject):
         painter.drawRect(10, 36, 20, 4)
         
         # Draw notification-style badge for profile number
-        profile_str = str(self.hotkey_manager.current_profile) if hasattr(self, 'hotkey_manager') else "1"
+        profile_str = "1"  # Default profile for v0.3.0
         
         # Badge background - bright color for visibility
         badge_color = QColor(0, 120, 215)  # Blue badge (Windows accent blue)
@@ -546,20 +489,23 @@ class WhisperApp(QtCore.QObject):
             # Reset the overlay for a new recording
             self.recording_overlay.reset_for_recording()
             
-            # Update active profile in overlay
-            if self.hotkey_manager and self.profile_manager:
-                current_profile = self.hotkey_manager.current_profile
+            # Update active profile in overlay (use loaded profile)
+            if self.profile_manager:
+                current_profile = self.recording_overlay.active_profile
+                # Validate that the loaded profile exists
+                if current_profile not in self.profile_manager.get_all_profiles():
+                    current_profile = min(self.profile_manager.get_all_profiles().keys())  # First available profile
+                    self.recording_overlay.active_profile = current_profile
                 profile_name = self.profile_manager.get_profile_name(current_profile)
                 self.recording_overlay.update_active_profile(current_profile, profile_name)
             
-            # Show overlay
+            # Show overlay as a focused window
             self.recording_overlay.show()
             self.recording_overlay.raise_()
-            # Don't call activateWindow() since we have WindowDoesNotAcceptFocus flag set
+            self.recording_overlay.activateWindow()
             
-            logger.debug("Overlay shown, starting audio recording")
-            # Start actual recording after UI is ready
-            self._start_actual_recording()
+            # Small delay to ensure window is fully shown before starting recording
+            QtCore.QTimer.singleShot(50, lambda: self._start_actual_recording())
         except Exception as e:
             logger.error(f"Failed to show recording overlay: {e}")
             self.is_recording = False
@@ -607,6 +553,7 @@ class WhisperApp(QtCore.QObject):
         logger.info("Processing recording...")
         
         self.is_recording = False
+        self.processing_cancelled = False  # Reset cancellation flag
         
         # Update tray icon to show not recording
         if hasattr(self, 'tray_icon'):
@@ -628,9 +575,7 @@ class WhisperApp(QtCore.QObject):
         temp_file_path = get_temp_audio_path()
         
         # Create and start processing worker
-        current_profile = 1  # Default profile
-        if self.hotkey_manager:
-            current_profile = self.hotkey_manager.current_profile
+        current_profile = self.recording_overlay.active_profile if hasattr(self.recording_overlay, 'active_profile') else 1
             
         self.processing_worker = ProcessingWorker(
             self.audio_recorder,
@@ -658,8 +603,8 @@ class WhisperApp(QtCore.QObject):
     @QtCore.pyqtSlot(bool, str)
     def _on_processing_complete(self, success, final_text):
         """Handle processing completion"""
-        if success:
-            # Auto-type the result
+        if success and not self.processing_cancelled:
+            # Auto-type the result only if not cancelled
             try:
                 logger.info("Preparing to type text...")
                 
@@ -667,9 +612,8 @@ class WhisperApp(QtCore.QObject):
                 if self.recording_overlay:
                     self.recording_overlay.hide()
                 
-                # Start auto-typing directly
-                logger.info(f"Starting auto-type for: {final_text[:30]}...")
-                self.auto_typer.type_text_fast(final_text)
+                # Small delay to ensure focus has returned to previous window
+                QtCore.QTimer.singleShot(200, lambda: self._do_auto_type(final_text))
                 
             except Exception as e:
                 logger.error(f"Auto-typing error: {e}")
@@ -686,6 +630,14 @@ class WhisperApp(QtCore.QObject):
             self.processing_worker.wait()
             self.processing_worker.deleteLater()
             self.processing_worker = None
+    
+    def _do_auto_type(self, text):
+        """Perform auto-typing after delay"""
+        if not self.processing_cancelled:
+            logger.info(f"Starting auto-type for: {text[:30]}...")
+            self.auto_typer.type_text_fast(text)
+        else:
+            logger.info("Auto-typing cancelled - user pressed ESC")
     
     @QtCore.pyqtSlot(str)
     def _on_processing_error(self, error_message):
@@ -718,7 +670,14 @@ class WhisperApp(QtCore.QObject):
         """Cancel the current recording"""
         logger.debug("Recording cancelled")
         self.is_recording = False
+        self.processing_cancelled = True  # Set cancellation flag
         self.audio_recorder.stop_recording()
+        
+        # Stop processing worker if it's running
+        if self.processing_worker and self.processing_worker.isRunning():
+            logger.info("Stopping processing worker due to cancellation")
+            self.processing_worker.terminate()
+            self.processing_worker.wait(1000)
         
         # Update tray icon to show not recording
         if hasattr(self, 'tray_icon'):
@@ -735,18 +694,6 @@ class WhisperApp(QtCore.QObject):
         # Clean up overlay (if not already closed by auto-typing)
         self._cleanup_overlay()
         
-    @QtCore.pyqtSlot()
-    def stop_recording(self):
-        """Stop audio recording and process the result"""
-        logger.info("Stopping recording...")
-        
-        if self.recording_overlay:
-            # Trigger the overlay's finish recording
-            self.recording_overlay.finish_recording()
-        else:
-            logger.info("No recording overlay to stop")
-            # If there's no overlay, we need to process the recording directly
-            self.process_recording()
     
     def cleanup(self):
         """Clean up resources"""
