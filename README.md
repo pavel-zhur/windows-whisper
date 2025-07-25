@@ -34,7 +34,7 @@ A Windows desktop application that provides instant voice-to-text transcription 
 #### Option 1: Windows Installer (Recommended for most users)
 **Prerequisites:** Windows 10 or higher (no Python required)
 
-1. Download `WindowsWhisper-Setup.exe` from the [Releases page](https://github.com/yourusername/windows-whisper/releases)
+1. Download `WindowsWhisper-Setup.exe` from the [Releases page](https://github.com/pavel-zhur/windows-whisper/releases)
 2. Run the installer and follow the setup wizard
 3. After installation, use "Setup API Token" from the system tray menu
 4. The app starts automatically and runs in the system tray
@@ -42,7 +42,7 @@ A Windows desktop application that provides instant voice-to-text transcription 
 #### Option 2: Portable Version
 **Prerequisites:** Windows 10 or higher (no Python required)
 
-1. Download the portable ZIP from the [Releases page](https://github.com/yourusername/windows-whisper/releases)
+1. Download the portable ZIP from the [Releases page](https://github.com/pavel-zhur/windows-whisper/releases)
 2. Extract to any folder
 3. Run `WindowsWhisper.exe`
 4. Use "Setup API Token" from the system tray menu
@@ -51,7 +51,7 @@ A Windows desktop application that provides instant voice-to-text transcription 
 **Prerequisites:** Python 3.8+, Windows 10 or higher
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/windows-whisper.git
+   git clone https://github.com/pavel-zhur/windows-whisper.git
    cd windows-whisper
    ```
 
@@ -178,7 +178,7 @@ Recommended:
 
 ## Support and Updates
 
-- Check the [GitHub repository](https://github.com/yourusername/windows-whisper) for updates
+- Check the [GitHub repository](https://github.com/pavel-zhur/windows-whisper) for updates
 - Submit issues for bugs or feature requests
 - Join our community discussions
 
