@@ -31,17 +31,24 @@ A Windows desktop application that provides instant voice-to-text transcription 
 
 ### 2. Installation
 
-#### Prerequisites
-- Python 3.8 or higher ([Download Python](https://www.python.org/downloads/))
-- Windows 10 or higher
+#### Option 1: Windows Installer (Recommended for most users)
+**Prerequisites:** Windows 10 or higher (no Python required)
 
-#### Option 1: Simple Installation (Recommended for most users)
-1. Download the latest release from the [Releases page](https://github.com/yourusername/windows-whisper/releases)
-2. Extract the ZIP file to your desired location
-3. Create the `.env` file with your OpenAI API key (as shown above)
-4. Double-click `Windows Whisper.exe` to start
+1. Download `WindowsWhisper-Setup.exe` from the [Releases page](https://github.com/yourusername/windows-whisper/releases)
+2. Run the installer and follow the setup wizard
+3. After installation, use "Setup API Token" from the system tray menu
+4. The app starts automatically and runs in the system tray
 
-#### Option 2: From Source (For developers)
+#### Option 2: Portable Version
+**Prerequisites:** Windows 10 or higher (no Python required)
+
+1. Download the portable ZIP from the [Releases page](https://github.com/yourusername/windows-whisper/releases)
+2. Extract to any folder
+3. Run `WindowsWhisper.exe`
+4. Use "Setup API Token" from the system tray menu
+
+#### Option 3: From Source (For developers)
+**Prerequisites:** Python 3.8+, Windows 10 or higher
 1. Clone the repository:
    ```bash
    git clone https://github.com/yourusername/windows-whisper.git
