@@ -436,7 +436,7 @@ class WhisperApp(QtCore.QObject):
         painter.drawRect(10, 36, 20, 4)
         
         # Draw notification-style badge for profile number
-        profile_str = "1"  # Default profile for v0.3.0
+        profile_str = "1"  # Default profile for v0.4.0
         
         # Badge background - bright color for visibility
         badge_color = QColor(0, 120, 215)  # Blue badge (Windows accent blue)

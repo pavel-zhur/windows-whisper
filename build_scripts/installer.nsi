@@ -7,7 +7,7 @@
 
 ; Installer Information
 !define APP_NAME "Windows Whisper"
-!define APP_VERSION "0.3.0"
+!define APP_VERSION "0.4.0"
 !define APP_PUBLISHER "Windows Whisper"
 !define APP_URL "https://github.com/yourusername/windows-whisper"
 !define APP_EXE "WindowsWhisper.exe"
