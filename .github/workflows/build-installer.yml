@@ -40,10 +40,10 @@ jobs:
         
     - name: Verify executable
       run: |
-        if (!(Test-Path "dist\WindowsWhisper.exe")) {
+        if (!(Test-Path "build_scripts\dist\WindowsWhisper.exe")) {
           throw "Executable not found after build"
         }
-        $size = (Get-Item "dist\WindowsWhisper.exe").Length / 1MB
+        $size = (Get-Item "build_scripts\dist\WindowsWhisper.exe").Length / 1MB
         Write-Host "Executable size: $([math]::Round($size, 2)) MB"
         
     - name: Create installer
@@ -76,7 +76,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: WindowsWhisper-${{ steps.version.outputs.VERSION }}-Executable
-        path: dist/WindowsWhisper.exe
+        path: build_scripts/dist/WindowsWhisper.exe
         
     - name: Upload installer artifact
       uses: actions/upload-artifact@v4
@@ -89,7 +89,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          dist/WindowsWhisper.exe
+          build_scripts/dist/WindowsWhisper.exe
           build_scripts/WindowsWhisper-*-Setup.exe
         generate_release_notes: true
         prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
@@ -103,8 +103,8 @@ jobs:
         Write-Host "================================"
         Write-Host "Version: ${{ steps.version.outputs.VERSION }}"
         
-        if (Test-Path "dist\WindowsWhisper.exe") {
-          $exeSize = (Get-Item "dist\WindowsWhisper.exe").Length / 1MB
+        if (Test-Path "build_scripts\dist\WindowsWhisper.exe") {
+          $exeSize = (Get-Item "build_scripts\dist\WindowsWhisper.exe").Length / 1MB
           Write-Host "Executable: WindowsWhisper.exe ($([math]::Round($exeSize, 2)) MB)"
         }
         

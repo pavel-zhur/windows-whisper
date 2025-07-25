@@ -39,7 +39,7 @@ hiddenimports = [
     'src.audio',
     'src.auto_type',
     'src.profile_manager',
-    'src.profile_switching_hotkey',
+    'src.global_hotkey_manager',
     'src.translation',
     'src.ui.overlay',
     'src.ui.token_overlay',
