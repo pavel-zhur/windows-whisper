@@ -7,7 +7,7 @@ A Windows desktop application that provides instant voice-to-text transcription 
 - 📝 Real-time waveform visualization with smooth animations
 - ⚡ Instant transcription using OpenAI Whisper API
 - 🔄 **10 transformation profiles** (1-9, 0) for different use cases
-- 🌍 Translation support (Spanish, French)
+- 🌍 Translation support (Spanish, French, German)
 - 💼 Professional text formatting and politeness filters
 - 📋 Automatic text typing via clipboard
 - 🔑 Profile switching with **1-9, 0** keys in recording window
@@ -74,7 +74,8 @@ The app includes 10 transformation profiles that can be configured:
 3. **Profile 3**: Translate to Spanish (with formal tone)
 4. **Profile 4**: Translate to French (with formal tone)
 5. **Profile 5**: Meeting Notes Style (converts to formal bullet points)
-6. **Profiles 6-9, 0**: Additional customizable profiles
+6. **Profile 6**: Translate to German (with formal tone)
+7. **Profiles 7-9, 0**: Additional customizable profiles
 
 Profiles are configured in `profiles.yaml` and can be customized.
 
