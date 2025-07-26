@@ -1,5 +1,6 @@
 from PyQt5 import QtWidgets, QtCore, QtGui
 import logging
+import os
 import numpy as np  # Used for waveform calculations
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ class OverlayConstants:
     
     # Sizes scaled down by 1.5x
     WINDOW_WIDTH = 373  # was 560
-    WINDOW_HEIGHT = 320  # was 480
+    WINDOW_HEIGHT = 380  # Increased to accommodate buttons
     CLOSE_BUTTON_SIZE = 27  # was 40
     PROFILE_PILL_SIZE = 27  # was 40
     PROFILE_CONTAINER_HEIGHT = 29  # was 44
@@ -315,9 +316,9 @@ class WaveformWidget(QtWidgets.QWidget):
         painter.setBrush(gradient)
         painter.drawPath(path)
 
-class RecordingOverlay(QtWidgets.QWidget):
+class RecordingOverlay(QtWidgets.QDialog):
     """
-    Floating overlay UI for the recording functionality with instant response
+    Recording dialog for the recording functionality
     """
     # Signals
     recording_done = QtCore.pyqtSignal()
@@ -335,21 +336,20 @@ class RecordingOverlay(QtWidgets.QWidget):
         super().__init__(parent)
         self.opacity = opacity
         self.profiles = {}  # Will be populated with profile data
-        self.active_profile = 1
+        self.profile_file = "./.profile.txt"
+        self.active_profile = self._load_profile()
         
-        # Set window properties first for faster display
+        # Set window properties for a focused dialog
         self.setWindowFlags(
+            QtCore.Qt.Dialog |
             QtCore.Qt.WindowStaysOnTopHint |
-            QtCore.Qt.FramelessWindowHint |
-            QtCore.Qt.Tool |
-            QtCore.Qt.WindowDoesNotAcceptFocus  # Don't steal focus
+            QtCore.Qt.FramelessWindowHint
         )
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
-        self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating)  # Show without taking focus
         self.setWindowOpacity(self.opacity)
         
-        # Remove focus policies to prevent stealing focus
-        self.setFocusPolicy(QtCore.Qt.NoFocus)
+        # Accept focus for keyboard interaction
+        self.setFocusPolicy(QtCore.Qt.StrongFocus)
         
         # Show window immediately before heavy initialization
         self.resize(OverlayConstants.WINDOW_WIDTH, OverlayConstants.WINDOW_HEIGHT)
@@ -406,29 +406,7 @@ class RecordingOverlay(QtWidgets.QWidget):
         
         top_layout.addStretch()
         
-        # Close button
-        close_btn = QtWidgets.QPushButton("×")
-        close_btn.setFixedSize(OverlayConstants.CLOSE_BUTTON_SIZE, OverlayConstants.CLOSE_BUTTON_SIZE)
-        close_btn.setStyleSheet(f"""
-            QPushButton {{
-                color: #999999;
-                background: transparent;
-                border: none;
-                font-size: {int(OverlayConstants.CLOSE_BUTTON_SIZE * 0.8)}px;
-                font-weight: 300;
-                border-radius: {OverlayConstants.CLOSE_BUTTON_SIZE // 2}px;
-            }}
-            QPushButton:hover {{
-                color: #ffffff;
-                background: rgba(255, 255, 255, 0.1);
-            }}
-        """)
-        close_btn.setToolTip("Cancel recording")
-        def on_close_btn_clicked():
-            logger.debug("Close button clicked by user")
-            self.cancel_recording()
-        close_btn.clicked.connect(on_close_btn_clicked)
-        top_layout.addWidget(close_btn)
+        # No close button - we'll use proper action buttons at the bottom
         
         # Profile pills display - vertical layout
         self.profiles_widget = QtWidgets.QWidget()
@@ -436,10 +414,73 @@ class RecordingOverlay(QtWidgets.QWidget):
         self.profiles_layout.setContentsMargins(0, 0, 0, 0)
         self.profiles_layout.setSpacing(OverlayConstants.PROFILE_SPACING)
         self.profile_labels = []  # Store label widgets for updating
+        self.profile_shortcuts = []  # Store shortcuts to prevent garbage collection
         
         # Add waveform widget with better sizing
         self.waveform = WaveformWidget(self)
         self.waveform.setFixedHeight(OverlayConstants.WAVEFORM_HEIGHT)
+        
+        # Action buttons
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setSpacing(12)
+        
+        # Cancel button
+        self.cancel_btn = QtWidgets.QPushButton("Cancel")
+        self.cancel_btn.setFixedHeight(36)
+        self.cancel_btn.setMinimumWidth(100)
+        self.cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: rgba(255, 255, 255, 0.1);
+                color: white;
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 4px;
+                font-size: 14px;
+                font-family: {OverlayConstants.FONT_FAMILY};
+                padding: 0 20px;
+            }}
+            QPushButton:hover {{
+                background-color: rgba(255, 255, 255, 0.15);
+                border: 1px solid rgba(255, 255, 255, 0.3);
+            }}
+            QPushButton:pressed {{
+                background-color: rgba(255, 255, 255, 0.2);
+            }}
+        """)
+        self.cancel_btn.clicked.connect(self.reject)  # Standard dialog reject
+        
+        # Transcribe & Insert button (default button)
+        self.transcribe_btn = QtWidgets.QPushButton("Transcribe && Insert")
+        self.transcribe_btn.setFixedHeight(36)
+        self.transcribe_btn.setMinimumWidth(140)
+        self.transcribe_btn.setDefault(True)  # Make this the default button (Enter key)
+        self.transcribe_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {OverlayConstants.COLOR_BLUE};
+                color: white;
+                border: none;
+                border-radius: 4px;
+                font-size: 14px;
+                font-weight: 500;
+                font-family: {OverlayConstants.FONT_FAMILY};
+                padding: 0 20px;
+            }}
+            QPushButton:hover {{
+                background-color: #1a94ff;
+            }}
+            QPushButton:pressed {{
+                background-color: #0074e0;
+            }}
+            QPushButton:focus {{
+                outline: 2px solid rgba(255, 255, 255, 0.3);
+                outline-offset: 2px;
+            }}
+        """)
+        self.transcribe_btn.clicked.connect(self.accept)  # Standard dialog accept
+        
+        button_layout.addStretch()
+        button_layout.addWidget(self.cancel_btn)
+        button_layout.addWidget(self.transcribe_btn)
         
         # Add layouts to main layout
         main_layout.addLayout(top_layout)
@@ -448,6 +489,8 @@ class RecordingOverlay(QtWidgets.QWidget):
         main_layout.addSpacing(12)
         main_layout.addWidget(self.profiles_widget)
         main_layout.addStretch()
+        main_layout.addSpacing(12)
+        main_layout.addLayout(button_layout)
         
         # Set layout
         self.setLayout(main_layout)
@@ -496,6 +539,11 @@ class RecordingOverlay(QtWidgets.QWidget):
         """Center the widget on screen"""
         self.position_in_corner("center")
         
+    def accept(self):
+        """Override accept to handle Enter key and transcribe button"""
+        self.finish_recording()
+        # Don't call super().accept() here - we'll close after processing
+        
     def finish_recording(self):
         """Signal that recording is done"""
         self.timer.stop()
@@ -504,6 +552,10 @@ class RecordingOverlay(QtWidgets.QWidget):
         logger.info("Recording finished by user")
         self.recording_done.emit()
         
+    def reject(self):
+        """Override reject to handle ESC key and cancel button"""
+        self.cancel_recording()
+        
     def cancel_recording(self):
         """Signal that recording is cancelled"""
         logger.info("Recording cancelled by user")
@@ -511,7 +563,7 @@ class RecordingOverlay(QtWidgets.QWidget):
         self.timer.stop()
         self.waveform.stop_recording()  # Stop waveform animation
         self.recording_cancelled.emit()
-        self.close()
+        super().reject()  # Call QDialog's reject method
         
     def show_transcription_result(self, success, text_or_error):
         """
@@ -531,7 +583,14 @@ class RecordingOverlay(QtWidgets.QWidget):
     def showEvent(self, event):
         """Handle show event"""
         super().showEvent(event)
-        # Don't set focus - we want to stay in background
+        # Take focus for keyboard interaction
+        self.activateWindow()
+        self.raise_()
+        # Give focus to the transcribe button so Enter works immediately
+        if hasattr(self, 'transcribe_btn'):
+            self.transcribe_btn.setFocus()
+        else:
+            self.setFocus()
         
     def paintEvent(self, event):
         """Custom paint event for rounded rectangle background"""
@@ -565,11 +624,38 @@ class RecordingOverlay(QtWidgets.QWidget):
             self.move(event.globalPos() - self.drag_position)
             event.accept()
             
-    def keyPressEvent(self, event):
-        """Handle key press events"""
-        # Ignore all key events - no keyboard interaction
-        event.accept()
 
+    def _load_profile(self):
+        """Load saved profile from file"""
+        if not os.path.exists(self.profile_file):
+            # File doesn't exist - new installation, use default
+            return 1
+        
+        # File exists, try to read it
+        try:
+            with open(self.profile_file, 'r') as f:
+                return int(f.read().strip())
+        except Exception as e:
+            logger.error(f"Failed to load profile from existing file: {e}")
+            return 1  # Default to profile 1 on error
+    
+    def _save_profile(self):
+        """Save current profile to file"""
+        try:
+            with open(self.profile_file, 'w') as f:
+                f.write(str(self.active_profile))
+        except Exception as e:
+            logger.warning(f"Failed to save profile to file: {e}")
+    
+    def _switch_to_profile(self, profile_num):
+        """Switch to a different profile"""
+        if profile_num in self.profiles:
+            self.active_profile = profile_num
+            self._save_profile()  # Save the new active profile
+            profile_name = self.profiles[profile_num]
+            logger.info(f"Switched to profile {profile_num}: {profile_name}")
+            self._update_profiles_display()
+    
     def _emit_recording_started(self):
         """Emit the recording_started signal after a slight delay"""
         logger.debug("Emitting recording_started signal")
@@ -613,9 +699,11 @@ class RecordingOverlay(QtWidgets.QWidget):
         self.waveform.start_recording()
         
         # Make sure we have focus to capture key events
-        self.raise_()
         self.activateWindow()
-        self.setFocus()
+        self.raise_()
+        # Focus the transcribe button for Enter key
+        if hasattr(self, 'transcribe_btn'):
+            self.transcribe_btn.setFocus()
         
         # Emit signal to start actual recording
         logger.info("Starting new recording")
@@ -630,89 +718,97 @@ class RecordingOverlay(QtWidgets.QWidget):
     def update_active_profile(self, profile_number, profile_name):
         """Update the active profile"""
         self.active_profile = profile_number
+        self._save_profile()  # Save when profile is updated
         self._update_profiles_display()
         
     def _update_profiles_display(self):
-        """Update the profiles display with pill-style indicators"""
-        # Clear existing labels
-        for label in self.profile_labels:
-            label.deleteLater()
+        """Update the profiles display with clickable button widgets"""
+        # Clear existing buttons
+        for button in self.profile_labels:
+            button.deleteLater()
         self.profile_labels.clear()
+        
+        # Clear existing shortcuts
+        for shortcut in self.profile_shortcuts:
+            shortcut.deleteLater()
+        self.profile_shortcuts.clear()
         
         # Clear existing layout items
         while self.profiles_layout.count():
             item = self.profiles_layout.takeAt(0)
             if item:
-                item.widget().deleteLater() if item.widget() else None
+                widget = item.widget()
+                if widget:
+                    widget.deleteLater()
         
         if not self.profiles:
             return
             
-        # Create container for each profile (number + name)
+        # Create button for each profile
         for num in sorted(self.profiles.keys()):
-            if num > 5:  # Only show first 5 profiles to avoid crowding
+            if num > 10:  # Support up to 10 profiles (1-9, 0)
                 break
             
-            # Container widget
-            container = QtWidgets.QWidget()
-            container.setFixedHeight(OverlayConstants.PROFILE_CONTAINER_HEIGHT)
-            container_layout = QtWidgets.QHBoxLayout(container)
-            container_layout.setContentsMargins(0, 0, 0, 0)
-            container_layout.setSpacing(OverlayConstants.PROFILE_CONTAINER_SPACING)
+            # Create profile button
+            profile_btn = QtWidgets.QPushButton()
+            profile_btn.setFixedHeight(OverlayConstants.PROFILE_CONTAINER_HEIGHT + 6)
             
-            # Number pill
-            num_label = QtWidgets.QLabel(str(num))
-            num_label.setAlignment(QtCore.Qt.AlignCenter)
-            num_label.setFixedSize(OverlayConstants.PROFILE_PILL_SIZE, OverlayConstants.PROFILE_PILL_SIZE)
+            # Set button text with number and name
+            profile_name = self.profiles[num]
+            profile_btn.setText(f"{num}  {profile_name}")
             
-            # Profile name
-            name_label = QtWidgets.QLabel(self.profiles[num])
-            
+            # Style based on active state
             if num == self.active_profile:
                 # Active profile - highlighted
-                container.setStyleSheet(f"""
-                    QWidget {{
-                        background-color: {OverlayConstants.COLOR_BLUE_BG};
-                        border-radius: {OverlayConstants.CONTAINER_RADIUS}px;
-                    }}
-                """)
-                num_label.setStyleSheet(f"""
-                    QLabel {{
+                profile_btn.setStyleSheet(f"""
+                    QPushButton {{
                         background-color: {OverlayConstants.COLOR_BLUE};
                         color: white;
-                        border-radius: {OverlayConstants.PILL_RADIUS}px;
-                        font-size: {OverlayConstants.PROFILE_NUMBER_FONT_SIZE}px;
-                        font-weight: 600;
+                        border: none;
+                        border-radius: {OverlayConstants.CONTAINER_RADIUS}px;
+                        font-size: {OverlayConstants.PROFILE_NAME_FONT_SIZE}px;
+                        font-weight: 500;
                         font-family: {OverlayConstants.FONT_FAMILY};
+                        text-align: left;
+                        padding: 0 12px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {OverlayConstants.COLOR_BLUE};
                     }}
                 """)
-                name_label.setStyleSheet(OverlayConstants.get_font_style(
-                    OverlayConstants.PROFILE_NAME_FONT_SIZE,
-                    OverlayConstants.COLOR_WHITE,
-                    500
-                ))
             else:
                 # Inactive profile
-                num_label.setStyleSheet(f"""
-                    QLabel {{
-                        background-color: {OverlayConstants.COLOR_WHITE_BG};
-                        color: {OverlayConstants.COLOR_GRAY_NUMBER};
-                        border-radius: {OverlayConstants.PILL_RADIUS}px;
-                        font-size: {OverlayConstants.PROFILE_NUMBER_FONT_SIZE}px;
+                profile_btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: rgba(255, 255, 255, 0.05);
+                        color: {OverlayConstants.COLOR_GRAY_TEXT};
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        border-radius: {OverlayConstants.CONTAINER_RADIUS}px;
+                        font-size: {OverlayConstants.PROFILE_NAME_INACTIVE_SIZE}px;
                         font-family: {OverlayConstants.FONT_FAMILY};
+                        text-align: left;
+                        padding: 0 12px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: rgba(255, 255, 255, 0.1);
+                        color: white;
+                        border: 1px solid rgba(255, 255, 255, 0.2);
+                    }}
+                    QPushButton:pressed {{
+                        background-color: rgba(255, 255, 255, 0.15);
                     }}
                 """)
-                name_label.setStyleSheet(OverlayConstants.get_font_style(
-                    OverlayConstants.PROFILE_NAME_INACTIVE_SIZE,
-                    OverlayConstants.COLOR_GRAY_TEXT
-                ))
             
-            container_layout.addWidget(num_label)
-            container_layout.addWidget(name_label)
-            container_layout.addStretch()
+            # Connect click signal
+            profile_btn.clicked.connect(lambda checked, p=num: self._switch_to_profile(p))
             
-            self.profiles_layout.addWidget(container)
-            self.profile_labels.append(container)
+            # Add keyboard shortcut (just the number, no modifier)
+            shortcut = QtWidgets.QShortcut(QtGui.QKeySequence(str(num if num != 0 else "0")), self)
+            shortcut.activated.connect(lambda checked=False, p=num: self._switch_to_profile(p))
+            self.profile_shortcuts.append(shortcut)  # Store to prevent garbage collection
+            
+            self.profiles_layout.addWidget(profile_btn)
+            self.profile_labels.append(profile_btn)
         
     def show_status(self, status_text, status_type="info"):
         """Show a status message"""

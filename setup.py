@@ -2,11 +2,11 @@ from setuptools import setup, find_packages
 
 setup(
     name="windows-whisper",
-    version="0.3.0",
+    version="0.4.0",
     description="A lightweight voice-to-text tool triggered by Ctrl + Space using OpenAI's Whisper API",
-    author="Your Name",
-    author_email="your.email@example.com",
-    url="https://github.com/yourusername/windows-whisper",
+    author="Pavel Zhur",
+    author_email="completely.real@gmail.com",
+    url="https://github.com/pavel-zhur/windows-whisper",
     packages=find_packages(),
     include_package_data=True,
     install_requires=[
