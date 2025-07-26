@@ -53,6 +53,16 @@ profiles:
     transformation:
       model: "gpt-3.5-turbo"
       prompt: "Convert this spoken text into formal meeting notes format. Use bullet points, proper grammar, and professional language. Remove filler words and organize the content clearly."
+    
+  6:
+    name: "Translate to German"
+    description: "Translate to German with formal tone"
+    whisper:
+      model: "whisper-1"
+      prompt: "Add proper punctuation and capitalization."
+    transformation:
+      model: "gpt-3.5-turbo"
+      prompt: "Translate this text to German. Use formal language (Sie form). Ensure proper grammar and natural flow. Maintain a professional and respectful tone."
 
 # Examples of other profiles you could add:
 #
