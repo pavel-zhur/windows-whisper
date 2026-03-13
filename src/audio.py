@@ -72,26 +72,28 @@ class AudioRecorder:
             logger.error(f"Failed to pre-initialize audio stream: {e}")
             return False
     
-    def start_recording(self, max_seconds=None, callback_fn=None, level_callback=None):
+    def start_recording(self, max_seconds=None, callback_fn=None, level_callback=None, max_reached_callback=None):
         """
         Start recording audio immediately with minimal delay
-        
+
         Args:
             max_seconds (int): Maximum recording duration in seconds
             callback_fn (callable): Function to call when recording actually starts
             level_callback (callable): Function to call with audio levels (0.0-1.0)
-            
+            max_reached_callback (callable): Function to call when max recording time is reached
+
         Returns:
             bool: True if recording started successfully
         """
         if self.is_recording:
             logger.warning("Recording already in progress")
             return False
-            
+
         if max_seconds:
             self.max_seconds = max_seconds
-            
+
         self.level_callback = level_callback
+        self._max_reached_callback = max_reached_callback
         self.frames = []
         self.is_recording = True
         
@@ -159,6 +161,8 @@ class AudioRecorder:
                 current_time = time.time() - start_time
                 if current_time > self.max_seconds:
                     logger.info(f"Maximum recording time reached ({self.max_seconds} seconds)")
+                    if self._max_reached_callback:
+                        self._max_reached_callback()
                     break
                     
                 try:

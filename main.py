@@ -169,6 +169,7 @@ class WhisperApp(QtCore.QObject):
         
         # Pre-create overlays to avoid Qt threading issues
         self.recording_overlay = RecordingOverlay()
+        self.recording_overlay.set_max_seconds(MAX_RECORDING_SECONDS)
         self.recording_overlay.recording_done.connect(self.process_recording)
         self.recording_overlay.recording_cancelled.connect(self.cancel_recording)
         self.recording_overlay.hide()  # Start hidden
@@ -519,7 +520,8 @@ class WhisperApp(QtCore.QObject):
             self.audio_recorder.start_recording(
                 max_seconds=MAX_RECORDING_SECONDS,
                 level_callback=self._update_waveform if self.recording_overlay else None,
-                callback_fn=self._recording_started_callback
+                callback_fn=self._recording_started_callback,
+                max_reached_callback=self._on_max_recording_reached
             )
             logger.debug("Audio recording started")
         except Exception as e:
@@ -531,6 +533,13 @@ class WhisperApp(QtCore.QObject):
         # Now we can start the timer in the UI
         if self.recording_overlay:
             self.recording_overlay.start_recording()
+
+    def _on_max_recording_reached(self):
+        """Called from recording thread when max duration is hit — auto-submit"""
+        QtCore.QMetaObject.invokeMethod(
+            self.recording_overlay, "finish_recording",
+            QtCore.Qt.QueuedConnection
+        )
         
     def _update_waveform(self, level):
         """Update the waveform visualization with new audio level"""

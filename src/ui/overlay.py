@@ -359,13 +359,39 @@ class RecordingOverlay(QtWidgets.QDialog):
         self.position_in_corner(OVERLAY_POSITION, OVERLAY_MARGIN)
         # Don't show on init - will be shown when recording starts
         
+        # Max recording seconds (will be set from config)
+        self._max_seconds = 300  # default
+
         # Fast initialization of basic UI elements (time-critical ones)
+        # Timer is a horizontal layout: elapsed (large) + " / max" (small, dim)
+        self._timer_container = QtWidgets.QWidget()
+        timer_h = QtWidgets.QHBoxLayout(self._timer_container)
+        timer_h.setContentsMargins(0, 0, 0, 0)
+        timer_h.setSpacing(0)
+
         self.timer_label = QtWidgets.QLabel("00:00")
         self.timer_label.setStyleSheet(OverlayConstants.get_font_style(
-            OverlayConstants.TIMER_FONT_SIZE, 
-            OverlayConstants.COLOR_WHITE, 
+            OverlayConstants.TIMER_FONT_SIZE,
+            OverlayConstants.COLOR_WHITE,
             600
         ))
+
+        self._max_time_label = QtWidgets.QLabel()
+        self._update_max_time_label()
+        self._max_time_label.setStyleSheet(f"""
+            color: {OverlayConstants.COLOR_GRAY_NUMBER};
+            font-size: {OverlayConstants.TIMER_FONT_SIZE // 2}px;
+            font-family: {OverlayConstants.FONT_FAMILY};
+            font-weight: 400;
+            padding-bottom: 2px;
+        """)
+        self._max_time_label.setAlignment(QtCore.Qt.AlignBottom)
+
+        timer_h.addWidget(self.timer_label)
+        timer_h.addSpacing(4)
+        timer_h.addWidget(self._max_time_label, 0, QtCore.Qt.AlignBottom)
+        timer_h.addStretch()
+
         self.status_label = QtWidgets.QLabel("Recording")
         self.status_label.setStyleSheet(OverlayConstants.get_font_style(
             OverlayConstants.STATUS_FONT_SIZE,
@@ -400,7 +426,7 @@ class RecordingOverlay(QtWidgets.QDialog):
         # Timer section (left aligned)
         timer_section = QtWidgets.QVBoxLayout()
         timer_section.setSpacing(4)
-        timer_section.addWidget(self.timer_label)
+        timer_section.addWidget(self._timer_container)
         timer_section.addWidget(self.status_label)
         top_layout.addLayout(timer_section)
         
@@ -497,6 +523,17 @@ class RecordingOverlay(QtWidgets.QDialog):
         
         logger.info("Recording overlay UI setup complete")
         
+    def set_max_seconds(self, max_seconds: int):
+        """Set the maximum recording duration and update the label"""
+        self._max_seconds = max_seconds
+        self._update_max_time_label()
+
+    def _update_max_time_label(self):
+        """Update the /MM:SS max-time label"""
+        m = self._max_seconds // 60
+        s = self._max_seconds % 60
+        self._max_time_label.setText(f"/{m:02d}:{s:02d}")
+
     def start_recording(self):
         """Start the actual recording timer - called when audio recording starts"""
         self.start_time = QtCore.QTime.currentTime()
@@ -544,6 +581,7 @@ class RecordingOverlay(QtWidgets.QDialog):
         self.finish_recording()
         # Don't call super().accept() here - we'll close after processing
         
+    @QtCore.pyqtSlot()
     def finish_recording(self):
         """Signal that recording is done"""
         self.timer.stop()
